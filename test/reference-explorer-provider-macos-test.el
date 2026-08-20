@@ -1,16 +1,16 @@
-;;; reference-explorer-macos-test.el --- macOS provider tests -*- lexical-binding: t -*-
+;;; reference-explorer-provider-macos-test.el --- macOS provider tests -*- lexical-binding: t -*-
 
 (require 'ert)
-(require 'reference-explorer-macos)
+(require 'reference-explorer-provider-macos)
 
-(ert-deftest reference-explorer-macos-module-path-is-package-owned ()
+(ert-deftest reference-explorer-provider-macos-module-path-is-package-owned ()
   (should
    (string-suffix-p
-    (concat "/site-lisp/reference-explorer/reference-explorer-macos-module"
+    (concat "/site-lisp/reference-explorer/reference-explorer-provider-macos-module"
             (if (boundp 'module-file-suffix) module-file-suffix ".dylib"))
-    reference-explorer-macos-module-file)))
+    reference-explorer-provider-macos-module-file)))
 
-(ert-deftest reference-explorer-macos-computes-screen-baseline ()
+(ert-deftest reference-explorer-provider-macos-computes-screen-baseline ()
   (with-temp-buffer
     (save-window-excursion
       (switch-to-buffer (current-buffer))
@@ -37,28 +37,28 @@
                        (:weight 'medium)
                        (:size 15)))))
           (should
-           (equal (reference-explorer-macos--presentation context)
+           (equal (reference-explorer-provider-macos--presentation context)
                   '((130 . 255) "Test Font" "medium" 15.0))))))))
 
-(ert-deftest reference-explorer-macos-reports-success ()
+(ert-deftest reference-explorer-provider-macos-reports-success ()
   (let ((context (reference-explorer-context-create :query "dictionary"))
         called)
-    (cl-letf (((symbol-function 'reference-explorer-macos--load-module)
+    (cl-letf (((symbol-function 'reference-explorer-provider-macos--load-module)
                (lambda () t))
-              ((symbol-function 'reference-explorer-macos--presentation)
+              ((symbol-function 'reference-explorer-provider-macos--presentation)
                (lambda (_context) '((10 . 20) "Test Font" "medium" 15.0)))
               ((symbol-function
-                'reference-explorer-macos-show-definition-with-font)
+                'reference-explorer-provider-macos-show-definition-with-font)
                (lambda (query x y family weight size)
                  (setq called (list query x y family weight size))
                  t))
-              ((symbol-function 'reference-explorer-macos--arm-dismissal)
+              ((symbol-function 'reference-explorer-provider-macos--arm-dismissal)
                #'ignore))
-      (should (reference-explorer-macos-display context))
+      (should (reference-explorer-provider-macos-display context))
       (should
        (equal called '("dictionary" 10 20 "Test Font" "medium" 15.0))))))
 
-(ert-deftest reference-explorer-macos-automatic-lookup-anchors-at-term-start ()
+(ert-deftest reference-explorer-provider-macos-automatic-lookup-anchors-at-term-start ()
   (with-temp-buffer
     (insert "これは説明文全体です")
     (goto-char 7)
@@ -69,9 +69,9 @@
             :window (selected-window)
             :automatic t))
           called)
-      (cl-letf (((symbol-function 'reference-explorer-macos--load-module)
+      (cl-letf (((symbol-function 'reference-explorer-provider-macos--load-module)
                  (lambda () t))
-                ((symbol-function 'reference-explorer-macos--presentation)
+                ((symbol-function 'reference-explorer-provider-macos--presentation)
                  (lambda (refined)
                    (should
                     (= (marker-position
@@ -79,42 +79,42 @@
                        4))
                    '((10 . 20) "Test Font" "medium" 15.0)))
                 ((symbol-function
-                  'reference-explorer-macos-selection-at-offset)
+                  'reference-explorer-provider-macos-selection-at-offset)
                  (lambda (text offset)
                    (should (equal text "これは説明文全体です"))
                    (should (= offset (string-bytes "これは説明文")))
                    (list "説明文" (string-bytes "これは")
                          (string-bytes "これは説明文"))))
                 ((symbol-function
-                  'reference-explorer-macos-show-definition-with-font)
+                  'reference-explorer-provider-macos-show-definition-with-font)
                  (lambda (term x y family weight size)
                    (setq called (list term x y family weight size))
                    t))
-                ((symbol-function 'reference-explorer-macos--arm-dismissal)
+                ((symbol-function 'reference-explorer-provider-macos--arm-dismissal)
                  #'ignore))
-        (should (reference-explorer-macos-display context))
+        (should (reference-explorer-provider-macos-display context))
         (should
          (equal called '("説明文" 10 20 "Test Font" "medium" 15.0)))))))
 
-(ert-deftest reference-explorer-macos-dismisses-before-next-command ()
+(ert-deftest reference-explorer-provider-macos-dismisses-before-next-command ()
   (let (hidden)
     (unwind-protect
         (cl-letf (((symbol-function
-                    'reference-explorer-macos-hide-definition)
+                    'reference-explorer-provider-macos-hide-definition)
                    (lambda () (setq hidden t))))
-          (reference-explorer-macos--arm-dismissal)
+          (reference-explorer-provider-macos--arm-dismissal)
           (should
-           (memq #'reference-explorer-macos--dismiss-before-command
+           (memq #'reference-explorer-provider-macos--dismiss-before-command
                  pre-command-hook))
-          (reference-explorer-macos--dismiss-before-command)
+          (reference-explorer-provider-macos--dismiss-before-command)
           (should hidden)
           (should-not
-           (memq #'reference-explorer-macos--dismiss-before-command
+           (memq #'reference-explorer-provider-macos--dismiss-before-command
                  pre-command-hook)))
       (remove-hook 'pre-command-hook
-                   #'reference-explorer-macos--dismiss-before-command))))
+                   #'reference-explorer-provider-macos--dismiss-before-command))))
 
-(ert-deftest reference-explorer-macos-origin-offset-counts-utf8-bytes ()
+(ert-deftest reference-explorer-provider-macos-origin-offset-counts-utf8-bytes ()
   (with-temp-buffer
     (insert "前置き dictionary 後続")
     (search-backward "dictionary")
@@ -123,18 +123,18 @@
             :query "dictionary"
             :marker (copy-marker (point)))))
       (should
-       (equal (reference-explorer-macos--text-at-origin context)
+       (equal (reference-explorer-provider-macos--text-at-origin context)
               (cons "前置き dictionary 後続"
                     (string-bytes "前置き ")))))))
 
-(ert-deftest reference-explorer-macos-rejects-invisible-origin ()
+(ert-deftest reference-explorer-provider-macos-rejects-invisible-origin ()
   (let ((context (reference-explorer-context-create :query "dictionary")))
-    (cl-letf (((symbol-function 'reference-explorer-macos--load-module)
+    (cl-letf (((symbol-function 'reference-explorer-provider-macos--load-module)
                (lambda () t))
-              ((symbol-function 'reference-explorer-macos--presentation)
+              ((symbol-function 'reference-explorer-provider-macos--presentation)
                (lambda (_context) nil)))
-      (should-error (reference-explorer-macos-display context)
+      (should-error (reference-explorer-provider-macos-display context)
                     :type 'reference-explorer-provider-unavailable))))
 
-(provide 'reference-explorer-macos-test)
-;;; reference-explorer-macos-test.el ends here
+(provide 'reference-explorer-provider-macos-test)
+;;; reference-explorer-provider-macos-test.el ends here

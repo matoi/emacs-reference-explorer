@@ -1,4 +1,4 @@
-;;; reference-explorer-docset.el --- Search and render Dash docsets -*- lexical-binding: t -*-
+;;; reference-explorer-source-docset.el --- Search and render Dash docsets -*- lexical-binding: t -*-
 
 ;;; Commentary:
 
@@ -18,11 +18,11 @@
 (require 'subr-x)
 (require 'url-util)
 
-(defgroup reference-explorer-docset nil
+(defgroup reference-explorer-source-docset nil
   "Search locally installed Dash-compatible docsets."
   :group 'applications)
 
-(defcustom reference-explorer-docset-directories
+(defcustom reference-explorer-source-docset-directories
   (list (expand-file-name "docsets" (or (getenv "XDG_DATA_HOME")
                                          "~/.local/share"))
         (expand-file-name "~/Library/Application Support/Dash/DocSets")
@@ -30,9 +30,9 @@
   "Directories searched recursively for `.docset' bundles.
 Missing directories are ignored.  The first bundle with a given identity wins."
   :type '(repeat directory)
-  :group 'reference-explorer-docset)
+  :group 'reference-explorer-source-docset)
 
-(defcustom reference-explorer-docset-mode-alist
+(defcustom reference-explorer-source-docset-mode-alist
   '(((ruby-mode ruby-ts-mode) . ("Ruby"))
     ((python-mode python-ts-mode) . ("Python"))
     ((js-mode js-ts-mode typescript-mode typescript-ts-mode tsx-ts-mode)
@@ -44,19 +44,19 @@ current buffer is derived from any MODE.  Selectors use `Feed', `Feed@latest',
 `Feed@3.3.*', or `Feed@3.3.7' syntax and are searched in the listed order.
 `Feed' is equivalent to `Feed@latest' among locally installed versions."
   :type '(repeat (cons (repeat symbol) (repeat string)))
-  :group 'reference-explorer-docset)
+  :group 'reference-explorer-source-docset)
 
-(defcustom reference-explorer-docset-max-results 80
+(defcustom reference-explorer-source-docset-max-results 80
   "Maximum number of combined results returned by one search."
   :type 'integer
-  :group 'reference-explorer-docset)
+  :group 'reference-explorer-source-docset)
 
-(defcustom reference-explorer-docset-warn-when-missing t
+(defcustom reference-explorer-source-docset-warn-when-missing t
   "Warn when a visited file's mode has selectors but no installed docset."
   :type 'boolean
-  :group 'reference-explorer-docset)
+  :group 'reference-explorer-source-docset)
 
-(defcustom reference-explorer-docset-code-class-mode-alist
+(defcustom reference-explorer-source-docset-code-class-mode-alist
   '(("ruby" . ruby-mode)
     ("python" . python-mode)
     ("py" . python-mode)
@@ -71,37 +71,37 @@ The key is one CSS class on a `pre' element.  An unclassified block remains
 fixed-pitch but is not guessed from the surrounding docset, since reference
 pages often mix source code, shell commands, and terminal output."
   :type '(alist :key-type string :value-type function)
-  :group 'reference-explorer-docset)
+  :group 'reference-explorer-source-docset)
 
-(defface reference-explorer-docset-code-block
+(defface reference-explorer-source-docset-code-block
   '((t :inherit fixed-pitch :extend t))
   "Base face for a docset code block.
 Syntax faces supplied by the active theme are layered over this face."
-  :group 'reference-explorer-docset)
+  :group 'reference-explorer-source-docset)
 
-(cl-defstruct (reference-explorer-docset
-               (:constructor reference-explorer-docset-create))
+(cl-defstruct (reference-explorer-source-docset
+               (:constructor reference-explorer-source-docset-create))
   "One installed docset bundle."
   name feed version root database documents)
 
-(cl-defstruct (reference-explorer-docset-result
-               (:constructor reference-explorer-docset-result-create))
+(cl-defstruct (reference-explorer-source-docset-result
+               (:constructor reference-explorer-source-docset-result-create))
   "One search result from a docset."
   name type path docset exact)
 
-(defvar reference-explorer-docset--cache :uninitialized
+(defvar reference-explorer-source-docset--cache :uninitialized
   "Cached installed docsets, or `:uninitialized' before discovery.")
 
-(defvar reference-explorer-docset--warned-missing (make-hash-table :test #'equal)
+(defvar reference-explorer-source-docset--warned-missing (make-hash-table :test #'equal)
   "Mode and selector combinations already warned about this session.")
 
-(defvar-local reference-explorer-docset-current-result nil
+(defvar-local reference-explorer-source-docset-current-result nil
   "Result rendered in the current docset buffer.")
 
-(defconst reference-explorer-docset-metadata-file-name ".reference-explorer-docset.json"
+(defconst reference-explorer-source-docset-metadata-file-name ".reference-explorer-source-docset.json"
   "Metadata file stored inside a managed docset bundle.")
 
-(defun reference-explorer-docset--code-mode (dom)
+(defun reference-explorer-source-docset--code-mode (dom)
   "Return the configured major mode for code-block DOM, or nil."
   (let ((classes
          (append
@@ -111,10 +111,10 @@ Syntax faces supplied by the active theme are layered over this face."
     (seq-some
      (lambda (class)
        (alist-get (string-remove-prefix "language-" class)
-                  reference-explorer-docset-code-class-mode-alist nil nil #'equal))
+                  reference-explorer-source-docset-code-class-mode-alist nil nil #'equal))
      classes)))
 
-(defun reference-explorer-docset--fontify-code-string (text mode)
+(defun reference-explorer-source-docset--fontify-code-string (text mode)
   "Return TEXT fontified with major MODE.
 Return TEXT unchanged when MODE is unavailable or cannot be initialized."
   (if (not (fboundp mode))
@@ -127,48 +127,48 @@ Return TEXT unchanged when MODE is unavailable or cannot be initialized."
           (buffer-substring (point-min) (point-max)))
       (error text))))
 
-(defun reference-explorer-docset--shr-tag-pre (dom)
+(defun reference-explorer-source-docset--shr-tag-pre (dom)
   "Render code-block DOM with fixed pitch and available syntax colors."
   (let ((start (point)))
     (shr-tag-pre dom)
     (let* ((end (point))
-           (mode (reference-explorer-docset--code-mode dom)))
+           (mode (reference-explorer-source-docset--code-mode dom)))
       (when mode
         (let ((fontified
-               (reference-explorer-docset--fontify-code-string
+               (reference-explorer-source-docset--fontify-code-string
                 (buffer-substring-no-properties start end) mode)))
           (delete-region start end)
           (goto-char start)
           (insert fontified)
           (setq end (point))))
       (add-face-text-property
-       start end 'reference-explorer-docset-code-block t))))
+       start end 'reference-explorer-source-docset-code-block t))))
 
-(define-derived-mode reference-explorer-docset-mode special-mode "Docset"
+(define-derived-mode reference-explorer-source-docset-mode special-mode "Docset"
   "Major mode for rendered docset articles."
   (setq-local word-wrap t))
 
-(defun reference-explorer-docset--metadata (root)
+(defun reference-explorer-source-docset--metadata (root)
   "Return managed metadata from docset ROOT, or nil."
-  (let ((file (expand-file-name reference-explorer-docset-metadata-file-name root)))
+  (let ((file (expand-file-name reference-explorer-source-docset-metadata-file-name root)))
     (when (file-regular-p file)
       (condition-case nil
           (json-read-file file)
         (error nil)))))
 
-(defun reference-explorer-docset--bundle (root)
-  "Return a `reference-explorer-docset' for bundle ROOT, or nil when invalid."
+(defun reference-explorer-source-docset--bundle (root)
+  "Return a `reference-explorer-source-docset' for bundle ROOT, or nil when invalid."
   (let* ((database (expand-file-name "Contents/Resources/docSet.dsidx" root))
          (documents (expand-file-name "Contents/Resources/Documents" root))
          (name (string-remove-suffix
                 ".docset"
                 (file-name-nondirectory (directory-file-name root))))
-         (metadata (reference-explorer-docset--metadata root))
+         (metadata (reference-explorer-source-docset--metadata root))
          (feed (or (alist-get 'feed metadata) name))
          (version (or (alist-get 'version metadata)
                       (alist-get 'resolved_version metadata))))
     (when (and (file-regular-p database) (file-directory-p documents))
-      (reference-explorer-docset-create
+      (reference-explorer-source-docset-create
        :name name
        :feed feed
        :version version
@@ -176,12 +176,12 @@ Return TEXT unchanged when MODE is unavailable or cannot be initialized."
        :database database
        :documents documents))))
 
-(defun reference-explorer-docset-discover (&optional refresh)
+(defun reference-explorer-source-docset-discover (&optional refresh)
   "Return installed docsets, refreshing discovery when REFRESH is non-nil."
-  (when (or refresh (eq reference-explorer-docset--cache :uninitialized))
+  (when (or refresh (eq reference-explorer-source-docset--cache :uninitialized))
     (let ((seen (make-hash-table :test #'equal))
           bundles)
-      (dolist (directory reference-explorer-docset-directories)
+      (dolist (directory reference-explorer-source-docset-directories)
         (when (file-directory-p directory)
           (dolist (root (directory-files-recursively
                          directory "\\.docset\\'" t
@@ -190,26 +190,26 @@ Return TEXT unchanged when MODE is unavailable or cannot be initialized."
                                  ".docset"
                                  (directory-file-name subdirectory))))))
             (when-let ((bundle (and (file-directory-p root)
-                                    (reference-explorer-docset--bundle root))))
+                                    (reference-explorer-source-docset--bundle root))))
               (let ((identity
-                     (if (reference-explorer-docset-version bundle)
+                     (if (reference-explorer-source-docset-version bundle)
                          (list 'managed
-                               (reference-explorer-docset-feed bundle)
-                               (reference-explorer-docset-version bundle))
-                       (list 'unmanaged (reference-explorer-docset-name bundle)))))
+                               (reference-explorer-source-docset-feed bundle)
+                               (reference-explorer-source-docset-version bundle))
+                       (list 'unmanaged (reference-explorer-source-docset-name bundle)))))
                 (unless (gethash identity seen)
                   (puthash identity t seen)
                   (push bundle bundles)))))))
-      (setq reference-explorer-docset--cache (nreverse bundles))))
-  reference-explorer-docset--cache)
+      (setq reference-explorer-source-docset--cache (nreverse bundles))))
+  reference-explorer-source-docset--cache)
 
-(defun reference-explorer-docset-refresh ()
+(defun reference-explorer-source-docset-refresh ()
   "Refresh installed docset discovery interactively."
   (interactive)
-  (let ((count (length (reference-explorer-docset-discover t))))
+  (let ((count (length (reference-explorer-source-docset-discover t))))
     (message "Discovered %d docset%s" count (if (= count 1) "" "s"))))
 
-(defun reference-explorer-docset-names-for-mode (&optional mode)
+(defun reference-explorer-source-docset-names-for-mode (&optional mode)
   "Return configured docset names for MODE or the current major mode."
   (let ((mode (or mode major-mode)))
     (cdr
@@ -219,9 +219,9 @@ Return TEXT unchanged when MODE is unavailable or cannot be initialized."
                     (or (eq mode parent)
                         (provided-mode-derived-p mode parent)))
                   (car entry)))
-      reference-explorer-docset-mode-alist))))
+      reference-explorer-source-docset-mode-alist))))
 
-(defun reference-explorer-docset--parse-selector (text)
+(defun reference-explorer-source-docset--parse-selector (text)
   "Parse local docset selector TEXT as (FEED POLICY VALUE)."
   (unless (string-match
            "\\`\\([[:alnum:]_.+-]+\\)\\(?:@\\([[:alnum:]_.+*-]+\\)\\)?\\'"
@@ -238,16 +238,16 @@ Return TEXT unchanged when MODE is unavailable or cannot be initialized."
       (user-error "A docset wildcard is only valid as a final .*: %s" text))
      (t (list feed 'exact selector)))))
 
-(defun reference-explorer-docset--series-match-p (version series)
+(defun reference-explorer-source-docset--series-match-p (version series)
   "Return non-nil when VERSION belongs to SERIES."
   (and version
        (or (equal version series)
            (string-prefix-p (concat series ".") version))))
 
-(defun reference-explorer-docset--newer-p (left right)
+(defun reference-explorer-source-docset--newer-p (left right)
   "Return non-nil when docset LEFT is newer than RIGHT."
-  (let ((left-version (reference-explorer-docset-version left))
-        (right-version (reference-explorer-docset-version right)))
+  (let ((left-version (reference-explorer-source-docset-version left))
+        (right-version (reference-explorer-source-docset-version right)))
     (cond
      ((null right-version) (and left-version t))
      ((null left-version) nil)
@@ -256,88 +256,88 @@ Return TEXT unchanged when MODE is unavailable or cannot be initialized."
           (version< right-version left-version)
         (error (string-lessp right-version left-version)))))))
 
-(defun reference-explorer-docset--select-installed (selector installed)
+(defun reference-explorer-source-docset--select-installed (selector installed)
   "Select one docset matching SELECTOR from INSTALLED."
   (pcase-let* ((`(,feed ,policy ,value)
-                (reference-explorer-docset--parse-selector selector))
+                (reference-explorer-source-docset--parse-selector selector))
                (candidates
                 (seq-filter
                  (lambda (docset)
-                   (and (equal feed (reference-explorer-docset-feed docset))
+                   (and (equal feed (reference-explorer-source-docset-feed docset))
                         (pcase policy
                           ('latest t)
                           ('series
-                           (reference-explorer-docset--series-match-p
-                            (reference-explorer-docset-version docset) value))
+                           (reference-explorer-source-docset--series-match-p
+                            (reference-explorer-source-docset-version docset) value))
                           ('exact
-                           (equal value (reference-explorer-docset-version docset))))))
+                           (equal value (reference-explorer-source-docset-version docset))))))
                  installed)))
     (seq-reduce
      (lambda (selected candidate)
        (if (or (null selected)
-               (reference-explorer-docset--newer-p candidate selected))
+               (reference-explorer-source-docset--newer-p candidate selected))
            candidate
          selected))
      candidates nil)))
 
-(defun reference-explorer-docset-for-mode (&optional mode)
+(defun reference-explorer-source-docset-for-mode (&optional mode)
   "Return installed docsets selected for MODE, in configured order."
-  (let ((installed (reference-explorer-docset-discover))
+  (let ((installed (reference-explorer-source-docset-discover))
         (seen (make-hash-table :test #'equal))
         selected)
-    (dolist (selector (reference-explorer-docset-names-for-mode mode))
+    (dolist (selector (reference-explorer-source-docset-names-for-mode mode))
       (when-let ((docset
-                  (reference-explorer-docset--select-installed selector installed)))
-        (unless (gethash (reference-explorer-docset-root docset) seen)
-          (puthash (reference-explorer-docset-root docset) t seen)
+                  (reference-explorer-source-docset--select-installed selector installed)))
+        (unless (gethash (reference-explorer-source-docset-root docset) seen)
+          (puthash (reference-explorer-source-docset-root docset) t seen)
           (push docset selected))))
     (nreverse selected)))
 
-(defun reference-explorer-docset-available-p (&optional mode)
+(defun reference-explorer-source-docset-available-p (&optional mode)
   "Return non-nil when MODE has at least one installed configured docset."
-  (and (sqlite-available-p) (reference-explorer-docset-for-mode mode)))
+  (and (sqlite-available-p) (reference-explorer-source-docset-for-mode mode)))
 
-(defun reference-explorer-docset-warn-if-missing ()
+(defun reference-explorer-source-docset-warn-if-missing ()
   "Warn once when the current visited file has no configured docset match."
-  (when-let* ((reference-explorer-docset-warn-when-missing)
+  (when-let* ((reference-explorer-source-docset-warn-when-missing)
               (buffer-file-name)
-              (selectors (reference-explorer-docset-names-for-mode major-mode))
-              ((null (reference-explorer-docset-for-mode major-mode)))
+              (selectors (reference-explorer-source-docset-names-for-mode major-mode))
+              ((null (reference-explorer-source-docset-for-mode major-mode)))
               (key selectors)
-              ((not (gethash key reference-explorer-docset--warned-missing))))
-    (puthash key t reference-explorer-docset--warned-missing)
+              ((not (gethash key reference-explorer-source-docset--warned-missing))))
+    (puthash key t reference-explorer-source-docset--warned-missing)
     (display-warning
-     'reference-explorer-docset
+     'reference-explorer-source-docset
      (format
       (concat "No installed docset matches %s for %s; "
-              "use M-x reference-explorer-docset-manager-install to add one, "
+              "use M-x reference-explorer-source-docset-manager-install to add one, "
               "or H-. will use its next provider")
       (string-join selectors ", ") major-mode)
      :warning)))
 
-(add-hook 'find-file-hook #'reference-explorer-docset-warn-if-missing)
+(add-hook 'find-file-hook #'reference-explorer-source-docset-warn-if-missing)
 
-(defun reference-explorer-docset--escape-like (text)
+(defun reference-explorer-source-docset--escape-like (text)
   "Escape SQLite LIKE metacharacters in TEXT."
   (replace-regexp-in-string
    "[_%\\\\]" (lambda (match) (concat "\\" match)) text t t))
 
-(defconst reference-explorer-docset--member-separators '("." "#" "::" "/")
+(defconst reference-explorer-source-docset--member-separators '("." "#" "::" "/")
   "Separators preceding an unqualified member name in docset indexes.")
 
-(defun reference-explorer-docset--normalize-index-path (path)
+(defun reference-explorer-source-docset--normalize-index-path (path)
   "Remove Dash metadata prefixes from indexed PATH."
   (replace-regexp-in-string "\\`<[^>]+>" "" (or path "")))
 
-(defun reference-explorer-docset--ranked-match (column query)
+(defun reference-explorer-source-docset--ranked-match (column query)
   "Return SQL rank, predicate, and parameters for COLUMN matching QUERY.
 An exact unqualified member such as `Kernel.require' ranks after a full exact
 match but before a heading that merely starts with `require'."
-  (let* ((escaped (reference-explorer-docset--escape-like query))
+  (let* ((escaped (reference-explorer-source-docset--escape-like query))
          (leaf-exact-patterns
           (mapcar (lambda (separator)
                     (concat "%" separator escaped))
-                  reference-explorer-docset--member-separators))
+                  reference-explorer-source-docset--member-separators))
          (leaf-prefix-patterns
           (mapcar (lambda (pattern) (concat pattern "%"))
                   leaf-exact-patterns))
@@ -362,9 +362,9 @@ match but before a heading that merely starts with `require'."
                   leaf-prefix-patterns)))
     (list rank predicate (append parameters parameters))))
 
-(defun reference-explorer-docset--search-one (docset query limit)
+(defun reference-explorer-source-docset--search-one (docset query limit)
   "Search DOCSET for exact and prefix matches to QUERY, up to LIMIT."
-  (let ((database (sqlite-open (reference-explorer-docset-database docset))))
+  (let ((database (sqlite-open (reference-explorer-source-docset-database docset))))
     (unwind-protect
         (condition-case nil
             (let* ((dash-p
@@ -374,7 +374,7 @@ match but before a heading that merely starts with `require'."
                       "SELECT 1 FROM sqlite_master "
                       "WHERE type = 'table' AND name = 'searchIndex'")))
                    (column (if dash-p "name" "t.ZTOKENNAME"))
-                   (match (reference-explorer-docset--ranked-match column query))
+                   (match (reference-explorer-source-docset--ranked-match column query))
                    (rank (nth 0 match))
                    (predicate (nth 1 match))
                    (parameters (nth 2 match))
@@ -405,10 +405,10 @@ match but before a heading that merely starts with `require'."
                        (append parameters (list limit))))))
               (mapcar
                (lambda (row)
-                 (reference-explorer-docset-result-create
+                 (reference-explorer-source-docset-result-create
                   :name (nth 0 row)
                   :type (nth 1 row)
-                  :path (reference-explorer-docset--normalize-index-path
+                  :path (reference-explorer-source-docset--normalize-index-path
                          (concat (nth 2 row)
                                  (when-let ((anchor (nth 3 row)))
                                    (concat "#" anchor))))
@@ -418,81 +418,81 @@ match but before a heading that merely starts with `require'."
           (sqlite-error nil))
       (sqlite-close database))))
 
-(defun reference-explorer-docset-search (query &optional mode)
+(defun reference-explorer-source-docset-search (query &optional mode)
   "Return exact then prefix docset results for QUERY and MODE.
 Within each match class, configured docset order is preserved."
   (let ((query (string-trim (or query "")))
         exact prefix)
     (unless (string-empty-p query)
       (catch 'full
-        (dolist (docset (reference-explorer-docset-for-mode mode))
+        (dolist (docset (reference-explorer-source-docset-for-mode mode))
           (dolist (result
-                   (reference-explorer-docset--search-one
-                    docset query reference-explorer-docset-max-results))
+                   (reference-explorer-source-docset--search-one
+                    docset query reference-explorer-source-docset-max-results))
             ;; Broken index rows must neither reach the selector nor consume
             ;; one of the available result slots.
-            (when (reference-explorer-docset-result-file result)
+            (when (reference-explorer-source-docset-result-file result)
               (push result
-                    (if (reference-explorer-docset-result-exact result) exact prefix))
+                    (if (reference-explorer-source-docset-result-exact result) exact prefix))
               (when (>= (+ (length exact) (length prefix))
-                        reference-explorer-docset-max-results)
+                        reference-explorer-source-docset-max-results)
                 (throw 'full nil))))))
       (append (nreverse exact) (nreverse prefix)))))
 
-(defun reference-explorer-docset-result-file (result)
+(defun reference-explorer-source-docset-result-file (result)
   "Return RESULT's safe local HTML path, without its fragment."
-  (let* ((docset (reference-explorer-docset-result-docset result))
+  (let* ((docset (reference-explorer-source-docset-result-docset result))
          (documents (file-name-as-directory
-                     (reference-explorer-docset-documents docset)))
+                     (reference-explorer-source-docset-documents docset)))
          (normalized
-          (reference-explorer-docset--normalize-index-path
-           (reference-explorer-docset-result-path result)))
+          (reference-explorer-source-docset--normalize-index-path
+           (reference-explorer-source-docset-result-path result)))
          (raw-path (car (split-string normalized "#")))
          (decoded (url-unhex-string raw-path))
          (file (expand-file-name decoded documents)))
     (when (and (file-regular-p file) (file-in-directory-p file documents))
       file)))
 
-(defun reference-explorer-docset-result-fragment (result)
+(defun reference-explorer-source-docset-result-fragment (result)
   "Return RESULT's decoded page fragment, or nil."
   (when-let ((fragment
               (cadr (split-string
-                     (reference-explorer-docset--normalize-index-path
-                      (reference-explorer-docset-result-path result))
+                     (reference-explorer-source-docset--normalize-index-path
+                      (reference-explorer-source-docset-result-path result))
                      "#"))))
     (url-unhex-string fragment)))
 
-(defun reference-explorer-docset--fragment-identifiers (result)
+(defun reference-explorer-source-docset--fragment-identifiers (result)
   "Return raw and decoded fragment identifiers for RESULT."
   (when-let ((raw
               (cadr (split-string
-                     (reference-explorer-docset--normalize-index-path
-                      (reference-explorer-docset-result-path result))
+                     (reference-explorer-source-docset--normalize-index-path
+                      (reference-explorer-source-docset-result-path result))
                      "#"))))
     (delete-dups (list raw (url-unhex-string raw)))))
 
-(defun reference-explorer-docset-result-url (result)
+(defun reference-explorer-source-docset-result-url (result)
   "Return a local file URL for RESULT."
-  (when-let ((file (reference-explorer-docset-result-file result)))
+  (when-let ((file (reference-explorer-source-docset-result-file result)))
     (concat (url-encode-url (concat "file://" file))
-            (when-let ((fragment (reference-explorer-docset-result-fragment result)))
+            (when-let ((fragment (reference-explorer-source-docset-result-fragment result)))
               (concat "#" (url-hexify-string fragment))))))
 
-(defun reference-explorer-docset--dom-class-p (node class)
+(defun reference-explorer-source-docset--dom-class-p (node class)
   "Return non-nil when DOM NODE has CSS CLASS."
   (and (consp node)
        (member class (split-string (or (dom-attr node 'class) "")))))
 
-(defun reference-explorer-docset--dom-find (node predicate &optional parent)
+(defun reference-explorer-source-docset--dom-find (node predicate &optional parent)
   "Return (NODE PARENT) below NODE satisfying PREDICATE."
   (when (consp node)
     (if (funcall predicate node)
         (list node parent)
       (cl-loop for child in (dom-children node)
                when (consp child)
-               thereis (reference-explorer-docset--dom-find child predicate node)))))
+               thereis (reference-explorer-source-docset--dom-find child predicate node)))))
 
-(defun reference-explorer-docset--dom-identifier-p (node identifiers)
+(defun reference-explorer-source-docset--dom-identifier-p (node identifiers)
   "Return non-nil when NODE matches one of IDENTIFIERS."
   (seq-some
    (lambda (identifier)
@@ -500,20 +500,20 @@ Within each match class, configured docset order is preserved."
          (equal (dom-attr node 'id) identifier)))
    identifiers))
 
-(defun reference-explorer-docset--heading-level (node)
+(defun reference-explorer-source-docset--heading-level (node)
   "Return heading level of DOM NODE, or nil."
   (and (consp node)
        (memq (dom-tag node) '(h1 h2 h3 h4 h5 h6))
        (string-to-number (substring (symbol-name (dom-tag node)) 1))))
 
-(defun reference-explorer-docset--dom-section-from-match (match)
+(defun reference-explorer-source-docset--dom-section-from-match (match)
   "Return the entry section represented by DOM MATCH.
-MATCH is the (NODE PARENT) pair returned by `reference-explorer-docset--dom-find'."
+MATCH is the (NODE PARENT) pair returned by `reference-explorer-source-docset--dom-find'."
   (pcase-let* ((`(,node ,parent) match)
                (dash-anchor-p
-                (reference-explorer-docset--dom-class-p node "dashAnchor"))
+                (reference-explorer-source-docset--dom-class-p node "dashAnchor"))
                (method-detail-p
-                (reference-explorer-docset--dom-class-p node "method-detail")))
+                (reference-explorer-source-docset--dom-class-p node "method-detail")))
     (cond
      (method-detail-p node)
      ((null parent) node)
@@ -523,38 +523,38 @@ MATCH is the (NODE PARENT) pair returned by `reference-explorer-docset--dom-find
              (nodes (if dash-anchor-p (cdr tail) tail))
              (initial-level
               (and (not dash-anchor-p)
-                   (reference-explorer-docset--heading-level node)))
+                   (reference-explorer-source-docset--heading-level node)))
              collected done)
         (dolist (sibling nodes)
           (unless done
-            (let ((level (reference-explorer-docset--heading-level sibling)))
+            (let ((level (reference-explorer-source-docset--heading-level sibling)))
               (if (and collected
-                       (or (reference-explorer-docset--dom-class-p
+                       (or (reference-explorer-source-docset--dom-class-p
                             sibling "dashAnchor")
                            (and initial-level level
                                 (<= level initial-level))))
                   (setq done t)
                 (push sibling collected)))))
         (when collected
-          `(div ((class . "reference-explorer-docset-entry"))
+          `(div ((class . "reference-explorer-source-docset-entry"))
                 ,@(nreverse collected))))))))
 
-(defun reference-explorer-docset--read-document (file)
+(defun reference-explorer-source-docset--read-document (file)
   "Parse local HTML FILE into a DOM tree."
   (with-temp-buffer
     (insert-file-contents file)
     (libxml-parse-html-region (point-min) (point-max))))
 
-(defun reference-explorer-docset--entry-section (document identifiers)
+(defun reference-explorer-source-docset--entry-section (document identifiers)
   "Return DOCUMENT section matching IDENTIFIERS.
 When IDENTIFIERS is nil, return the document's main content."
   (if identifiers
       (when-let ((match
-                  (reference-explorer-docset--dom-find
+                  (reference-explorer-source-docset--dom-find
                    document
                    (lambda (node)
-                     (reference-explorer-docset--dom-identifier-p node identifiers)))))
-        (reference-explorer-docset--dom-section-from-match match))
+                     (reference-explorer-source-docset--dom-identifier-p node identifiers)))))
+        (reference-explorer-source-docset--dom-section-from-match match))
     (let ((content (or (car (dom-by-tag document 'main))
                        (car (dom-by-tag document 'body))
                        document)))
@@ -563,22 +563,22 @@ When IDENTIFIERS is nil, return the document's main content."
       ;; gives a no-fragment class/module result the same heading-first shape
       ;; as an anchored method result.
       (if-let ((heading-match
-                (reference-explorer-docset--dom-find
+                (reference-explorer-source-docset--dom-find
                  content (lambda (node) (eq (dom-tag node) 'h1)))))
-          (reference-explorer-docset--dom-section-from-match heading-match)
+          (reference-explorer-source-docset--dom-section-from-match heading-match)
         content))))
 
-(defun reference-explorer-docset--alias-href (section)
+(defun reference-explorer-source-docset--alias-href (section)
   "Return the documented alias target href inside SECTION, or nil."
   (when-let* ((match
-              (reference-explorer-docset--dom-find
+              (reference-explorer-source-docset--dom-find
                section
                (lambda (node)
-                 (reference-explorer-docset--dom-class-p node "aliases"))))
+                 (reference-explorer-source-docset--dom-class-p node "aliases"))))
              (link (car (dom-by-tag (car match) 'a))))
     (dom-attr link 'href)))
 
-(defun reference-explorer-docset--relative-target (file href documents)
+(defun reference-explorer-source-docset--relative-target (file href documents)
   "Resolve local HREF relative to FILE and safely inside DOCUMENTS.
 Return (FILE . FRAGMENT), or nil."
   (when (and href
@@ -596,28 +596,28 @@ Return (FILE . FRAGMENT), or nil."
                  (file-in-directory-p target-file documents))
         (cons target-file (url-unhex-string fragment))))))
 
-(defun reference-explorer-docset--resolve-alias (section file documents)
+(defun reference-explorer-source-docset--resolve-alias (section file documents)
   "Append alias target content to SECTION when it points inside DOCUMENTS."
-  (if-let* ((href (reference-explorer-docset--alias-href section))
-            (target (reference-explorer-docset--relative-target file href documents))
-            (document (reference-explorer-docset--read-document (car target)))
+  (if-let* ((href (reference-explorer-source-docset--alias-href section))
+            (target (reference-explorer-source-docset--relative-target file href documents))
+            (document (reference-explorer-source-docset--read-document (car target)))
             (target-section
-             (reference-explorer-docset--entry-section document (list (cdr target)))))
-      `(div ((class . "reference-explorer-docset-alias"))
+             (reference-explorer-source-docset--entry-section document (list (cdr target)))))
+      `(div ((class . "reference-explorer-source-docset-alias"))
             ,section
             (hr nil)
-            (p ((class . "reference-explorer-docset-alias-target"))
+            (p ((class . "reference-explorer-source-docset-alias-target"))
                (strong nil "Alias target"))
             ,target-section)
     section))
 
-(defun reference-explorer-docset--rdoc-source-node-p (node)
+(defun reference-explorer-source-docset--rdoc-source-node-p (node)
   "Return non-nil when NODE is RDoc's source control or source body."
   (and (consp node)
-       (or (reference-explorer-docset--dom-class-p node "method-controls")
-           (reference-explorer-docset--dom-class-p node "method-source-code"))))
+       (or (reference-explorer-source-docset--dom-class-p node "method-controls")
+           (reference-explorer-source-docset--dom-class-p node "method-source-code"))))
 
-(defun reference-explorer-docset--normalize-render-order (node)
+(defun reference-explorer-source-docset--normalize-render-order (node)
   "Return NODE with browser-only presentation order normalized for SHR.
 RDoc places an expanded method source before its description and relies on
 CSS and JavaScript to hide it.  SHR has no such disclosure widget, so keep the
@@ -625,47 +625,47 @@ source available but move it after the documentation it would otherwise hide."
   (if (not (consp node))
       node
     (let* ((children
-            (mapcar #'reference-explorer-docset--normalize-render-order
+            (mapcar #'reference-explorer-source-docset--normalize-render-order
                     (dom-children node)))
            (rdoc-method-p
-            (reference-explorer-docset--dom-class-p node "method-detail"))
+            (reference-explorer-source-docset--dom-class-p node "method-detail"))
            (source-nodes
             (and rdoc-method-p
-                 (seq-filter #'reference-explorer-docset--rdoc-source-node-p
+                 (seq-filter #'reference-explorer-source-docset--rdoc-source-node-p
                              children))))
       (when source-nodes
         (setq children
               (append
-               (seq-remove #'reference-explorer-docset--rdoc-source-node-p children)
+               (seq-remove #'reference-explorer-source-docset--rdoc-source-node-p children)
                source-nodes)))
       (cons (dom-tag node)
             (cons (dom-attributes node) children)))))
 
-(defun reference-explorer-docset--render-data (result)
+(defun reference-explorer-source-docset--render-data (result)
   "Return (FILE DOCUMENT SECTION) used to render RESULT."
-  (unless (reference-explorer-docset-result-p result)
+  (unless (reference-explorer-source-docset-result-p result)
     (error "Not a docset result: %S" result))
-  (let ((file (reference-explorer-docset-result-file result)))
+  (let ((file (reference-explorer-source-docset-result-file result)))
     (unless file
       (user-error "Docset page is missing or unsafe: %s"
-                  (reference-explorer-docset-result-path result)))
-    (let* ((document (reference-explorer-docset--read-document file))
+                  (reference-explorer-source-docset-result-path result)))
+    (let* ((document (reference-explorer-source-docset--read-document file))
            (section
-            (reference-explorer-docset--entry-section
-             document (reference-explorer-docset--fragment-identifiers result))))
+            (reference-explorer-source-docset--entry-section
+             document (reference-explorer-source-docset--fragment-identifiers result))))
       (unless section
         (user-error "Docset entry target is missing: %s"
-                    (reference-explorer-docset-result-path result)))
+                    (reference-explorer-source-docset-result-path result)))
       (list
        file document
-       (reference-explorer-docset--normalize-render-order
-        (reference-explorer-docset--resolve-alias
+       (reference-explorer-source-docset--normalize-render-order
+        (reference-explorer-source-docset--resolve-alias
          section file
          (file-name-as-directory
-          (reference-explorer-docset-documents
-           (reference-explorer-docset-result-docset result)))))))))
+          (reference-explorer-source-docset-documents
+           (reference-explorer-source-docset-result-docset result)))))))))
 
-(defun reference-explorer-docset--html-head-assets (document)
+(defun reference-explorer-source-docset--html-head-assets (document)
   "Return safe presentation nodes copied from DOCUMENT's head.
 Stylesheets and inline styles are retained.  Scripts are deliberately omitted:
 an installed docset is documentation input, not trusted application code."
@@ -679,17 +679,17 @@ an installed docset is documentation input, not trusted application code."
                                "stylesheet"))))
      collect (copy-tree node))))
 
-(defconst reference-explorer-docset--entry-style
+(defconst reference-explorer-source-docset--entry-style
   (concat
    "html, body { min-width: 0 !important; }\n"
-   "body.reference-explorer-docset-entry { display: block !important; "
+   "body.reference-explorer-source-docset-entry { display: block !important; "
    "margin: 0 !important; padding: 0.8rem !important; }\n"
-   "body.reference-explorer-docset-entry > main { display: block !important; "
+   "body.reference-explorer-source-docset-entry > main { display: block !important; "
    "width: auto !important; max-width: none !important; "
    "margin: 0 !important; padding: 0 !important; }\n")
   "CSS that removes full-page layout constraints from an extracted entry.")
 
-(defconst reference-explorer-docset--entry-script
+(defconst reference-explorer-source-docset--entry-script
   (concat
    "document.addEventListener('click', function (event) {"
    "var toggle = event.target.closest('.method-source-toggle');"
@@ -701,12 +701,12 @@ an installed docset is documentation input, not trusted application code."
    "});")
   "Minimal source disclosure behavior for extracted RDoc entries.")
 
-(defun reference-explorer-docset-render-html (result &optional extra-style)
+(defun reference-explorer-source-docset-render-html (result &optional extra-style)
   "Return a self-contained local HTML document for RESULT.
 The selected entry is isolated from the original page while its stylesheets
 and relative links continue to resolve against the source document.
 Append optional EXTRA-STYLE after the docset's own stylesheets."
-  (let* ((data (reference-explorer-docset--render-data result))
+  (let* ((data (reference-explorer-source-docset--render-data result))
          (file (nth 0 data))
          (document (nth 1 data))
          (section (nth 2 data))
@@ -720,7 +720,7 @@ Append optional EXTRA-STYLE after the docset's own stylesheets."
                    (file-name-as-directory (file-name-directory file))))))
     (setf (alist-get 'class body-attributes)
           (string-join
-           (delq nil (list body-class "reference-explorer-docset-entry")) " "))
+           (delq nil (list body-class "reference-explorer-source-docset-entry")) " "))
     (let ((html
            `(html nil
              (head nil
@@ -728,20 +728,20 @@ Append optional EXTRA-STYLE after the docset's own stylesheets."
               (meta ((name . "viewport")
                      (content . "width=device-width, initial-scale=1")))
               (base ((href . ,base-url)))
-              ,@(reference-explorer-docset--html-head-assets document)
-              (style nil ,reference-explorer-docset--entry-style)
+              ,@(reference-explorer-source-docset--html-head-assets document)
+              (style nil ,reference-explorer-source-docset--entry-style)
               ,@(when extra-style `((style nil ,extra-style))))
              (body ,body-attributes
               (main nil ,section)
-              (script nil ,reference-explorer-docset--entry-script)))))
+              (script nil ,reference-explorer-source-docset--entry-script)))))
       (with-temp-buffer
         (dom-print html nil nil)
         (buffer-string)))))
 
-(defun reference-explorer-docset-render (result &optional buffer-name)
+(defun reference-explorer-source-docset-render (result &optional buffer-name)
   "Render RESULT with SHR and return BUFFER-NAME's buffer."
   (pcase-let ((`(,file ,_document ,section)
-               (reference-explorer-docset--render-data result)))
+               (reference-explorer-source-docset--render-data result)))
     (let ((buffer (get-buffer-create (or buffer-name "*Docset Reference*"))))
       (with-current-buffer buffer
         (let ((inhibit-read-only t)
@@ -752,19 +752,19 @@ Append optional EXTRA-STYLE after the docset's own stylesheets."
                                   (file-name-directory file))))))
           (erase-buffer)
           (let ((shr-external-rendering-functions
-                 `((pre . reference-explorer-docset--shr-tag-pre)
+                 `((pre . reference-explorer-source-docset--shr-tag-pre)
                    ,@shr-external-rendering-functions)))
             (shr-insert-document section))
-          (reference-explorer-docset-mode)
-          (setq reference-explorer-docset-current-result result)
+          (reference-explorer-source-docset-mode)
+          (setq reference-explorer-source-docset-current-result result)
           (goto-char (point-min))
           (skip-chars-forward " \t\r\n")
           (delete-region (point-min) (point))
           (goto-char (point-min))
           (when (string-empty-p (string-trim (buffer-string)))
             (user-error "Docset entry has no content: %s"
-                        (reference-explorer-docset-result-name result))))
+                        (reference-explorer-source-docset-result-name result))))
       buffer))))
 
-(provide 'reference-explorer-docset)
-;;; reference-explorer-docset.el ends here
+(provide 'reference-explorer-source-docset)
+;;; reference-explorer-source-docset.el ends here

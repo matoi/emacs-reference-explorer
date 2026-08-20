@@ -30,5 +30,5 @@ REFERENCE_DOCSET_ACTION=$action \
 REFERENCE_DOCSET_MANIFEST=$manifest \
 command emacs --batch -Q \
     -L "$lisp_directory" \
-    -l reference-explorer-docset-manager \
-    -f reference-explorer-docset-manager-batch
+    -l reference-explorer-source-docset-manager \
+    -f reference-explorer-source-docset-manager-batch

@@ -19,7 +19,7 @@ With Emacs 29 or later, install the repository through `package-vc`:
  '(reference-explorer
    :url "https://github.com/matoi/emacs-reference-explorer"
    :main-file "reference-explorer.el"))
-(require 'reference-explorer-lookup)
+(require 'reference-explorer-source-lookup)
 ```
 
 GNU Lookup, Consult, Embark, Vertico, and Popper integrations are optional.
@@ -30,9 +30,9 @@ When GNU Lookup, EBLook, and MeCab are installed through Homebrew, configure
 their paths and select Lookup's MeCab backend before loading the UI:
 
 ```elisp
-(require 'reference-explorer-lookup-homebrew)
-(reference-explorer-lookup-homebrew-configure)
-(require 'reference-explorer-lookup)
+(require 'reference-explorer-source-lookup-homebrew)
+(reference-explorer-source-lookup-homebrew-configure)
+(require 'reference-explorer-source-lookup)
 ```
 
 This helper is never loaded automatically. Other package layouts can put GNU
@@ -44,12 +44,12 @@ with Lookup's `:stemmer` dictionary option.
 ## Architecture
 
 `reference-explorer.el` owns query context, provider registration, ordered
-dispatch, and fallback. `reference-explorer-macos.el` and
-`reference-explorer-monokakido.el` register reference providers with that
-dispatcher. `reference-explorer-lookup.el` is the GNU Lookup-facing selection
+dispatch, and fallback. `reference-explorer-provider-macos.el` and
+`reference-explorer-provider-monokakido.el` register reference providers with that
+dispatcher. `reference-explorer-source-lookup.el` is the GNU Lookup-facing selection
 and presentation layer; it also presents docset and thesaurus results.
 
-Provider order is controlled by `reference-explorer-lookup-provider-order`.
+Provider order is controlled by `reference-explorer-source-lookup-provider-order`.
 On macOS the default order is docset, system Dictionary, then GNU Lookup.
 Monokakido remains available explicitly unless it is added to that order. A
 provider falls through only when it signals that it is unavailable; an empty
@@ -57,7 +57,7 @@ result does not silently change providers.
 
 ## Lookup interfaces
 
-`reference-explorer-lookup-quick-lookup-at-point` opens a compact graphical
+`reference-explorer-source-lookup-quick-lookup-at-point` opens a compact graphical
 selector for exact and prefix matches. `H-n` and `H-p` move through results,
 `TAB` commits the selected entry, `M-m` transfers the current query to Consult,
 and `H-s` and `H-e` select shorter and longer contextual phrases. The source
@@ -65,19 +65,19 @@ query is highlighted in its original buffer. A no-match selector remains open
 so another contextual length can be tried; an unrelated key closes it and is
 handled normally by the source buffer.
 
-`reference-explorer-lookup-consult-at-point` starts the Consult interface with
+`reference-explorer-source-lookup-consult-at-point` starts the Consult interface with
 the active region or phrase at point. Its `H-s` and `H-e` bindings use the same
 contextual alternatives, while `M-m` switches between literal and converted
 input. Exact matches precede partial matches. Within each group,
-`reference-explorer-lookup-source-order` gives displayed dictionary titles an
+`reference-explorer-source-lookup-source-order` gives displayed dictionary titles an
 explicit priority and preserves Lookup's order for unspecified sources.
 
 Moving through either interface previews the current entry in a temporary
 child frame. Sources listed in
-`reference-explorer-lookup-preview-highlight-sources` highlight literal query
+`reference-explorer-source-lookup-preview-highlight-sources` highlight literal query
 occurrences. Preview is suppressed when neither side of the selected row has
 the configured usable width. A committed result is passed to
-`reference-explorer-lookup-display-buffer-function`, allowing a host to use
+`reference-explorer-source-lookup-display-buffer-function`, allowing a host to use
 ordinary `display-buffer`, Popper, or another display policy.
 
 Lookup entries have Embark actions for display and copying their complete
@@ -94,7 +94,7 @@ Emacs glyph's font metrics. The next Emacs command dismisses the popup before
 continuing.
 
 The native module is loaded lazily from
-`~/.emacs.d/site-lisp/reference-explorer/reference-explorer-macos-module` plus
+`~/.emacs.d/site-lisp/reference-explorer/reference-explorer-provider-macos-module` plus
 the platform module suffix. Build and install it after installing or updating
 Emacs:
 
@@ -109,8 +109,8 @@ is installed separately, set `EMACS_INCLUDE_DIR` to its containing directory.
 
 The Monokakido provider opens the Dictionaries URL scheme. Optional category
 and scope restrictions are configured with
-`reference-explorer-monokakido-category` and
-`reference-explorer-monokakido-scope`.
+`reference-explorer-provider-monokakido-category` and
+`reference-explorer-provider-monokakido-scope`.
 
 ## Docsets
 
@@ -134,10 +134,10 @@ scripts/manage-docsets.sh update MANIFEST
 
 ## Thesaurus
 
-`reference-explorer-lookup-thesaurus-at-point` retrieves synonyms for the
+`reference-explorer-source-lookup-thesaurus-at-point` retrieves synonyms for the
 active region or contextual phrase. Candidate movement previews definitions
 through local GNU Lookup and performs no additional online request. Configure
-`reference-explorer-lookup-thesaurus-preview-sources` with displayed Lookup
+`reference-explorer-source-lookup-thesaurus-preview-sources` with displayed Lookup
 dictionary titles to prioritize those previews; nil retains normal source
 order.
 
@@ -146,7 +146,7 @@ simple capitalization. Replacement is refused if the source changed during
 the asynchronous request. Embark actions provide replacement, GNU Lookup,
 copying, and a new synonym search rooted at the selected term.
 
-`reference-explorer-thesaurus.el` talks directly to PowerThesaurus rather than
+`reference-explorer-source-thesaurus.el` talks directly to PowerThesaurus rather than
 loading the Emacs `powerthesaurus` package. An uncached search obtains the term
 identifier and then its complete relation list. Completed results and term
 identifiers are cached in memory, and concurrent identical searches share the
@@ -155,7 +155,7 @@ not initiate network requests.
 
 ## Phrase selection
 
-`reference-explorer-segmentation-backends` is an ordered list of phrase-bound
+`reference-explorer-query-segment-backends` is an ordered list of phrase-bound
 functions. The bundled MeCab backend selects Japanese words and compound
 nouns; the Emacs backend provides the final ordinary word-boundary fallback.
 A language-specific backend can be inserted before the fallback without
@@ -163,22 +163,22 @@ changing the reference UI. Each backend receives the visible position and an
 optional visible-region restriction and returns candidate buffer bounds from
 most useful to least useful.
 
-Converted lookup mode applies `reference-explorer-lookup-query-conversion-function`
+Converted lookup mode applies `reference-explorer-source-lookup-query-conversion-function`
 to minibuffer input; its default converts romanized Japanese to hiragana with
 Emacs's built-in Quail rules. The host environment supplies the matching
-completion behavior through `reference-explorer-lookup-converted-completion-style`.
+completion behavior through `reference-explorer-source-lookup-converted-completion-style`.
 The optional module below supplies one implementation backed by Migemo and
 Orderless.
 
-The optional `reference-explorer-lookup-migemo` module extends the lookup UI's
+The optional `reference-explorer-source-lookup-migemo` module extends the lookup UI's
 converted-input filtering. It is not a reference provider: unlike the macOS
-and Monokakido modules, it attaches to `reference-explorer-lookup`. It assumes
+and Monokakido modules, it attaches to `reference-explorer-source-lookup`. It assumes
 the host has already configured and loaded Migemo and Orderless. Loading it
-defines `reference-explorer-lookup-migemo-orderless` and selects that as the
+defines `reference-explorer-source-lookup-migemo-orderless` and selects that as the
 converted-mode completion style. Nothing loads this module automatically:
 
 ```elisp
-(require 'reference-explorer-lookup-migemo)
+(require 'reference-explorer-source-lookup-migemo)
 ```
 
 ## Development

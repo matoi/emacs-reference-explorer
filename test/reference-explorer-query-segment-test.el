@@ -1,0 +1,76 @@
+;;; reference-explorer-query-segment-test.el --- Phrase selection tests -*- lexical-binding: t -*-
+
+(require 'ert)
+(require 'reference-explorer-query-segment)
+
+(ert-deftest reference-explorer-query-segment-backends-are-pluggable ()
+  (with-temp-buffer
+    (insert "multi word phrase")
+    (goto-char 8)
+    (let ((reference-explorer-query-segment-backends
+           (list (lambda (_position _start _end) '((1 . 18))))))
+      (should (equal (reference-explorer-query-segment-word-at-point)
+                     "multi word phrase")))))
+
+(ert-deftest reference-explorer-query-segment-recognizes-emacs-word ()
+  (with-temp-buffer
+    (insert "alpha beta")
+    (goto-char 3)
+    (should (equal (reference-explorer-query-segment-word-at-point) "alpha"))))
+
+(ert-deftest reference-explorer-query-segment-uses-visible-org-link-description ()
+  (require 'org)
+  (with-temp-buffer
+    (org-mode)
+    (insert "[[https://example.com][Example Link]]")
+    (goto-char (point-min))
+    (should (equal (reference-explorer-query-segment-word-at-point) "Example"))
+    (search-forward "Link")
+    (should (equal (reference-explorer-query-segment-word-at-point) "Link"))))
+
+(ert-deftest reference-explorer-query-segment-maps-hidden-org-link-to-visible-position ()
+  (require 'org)
+  (with-temp-buffer
+    (org-mode)
+    (insert "[[https://example.com][Example Link]]")
+    (goto-char (point-min))
+    (should
+     (= (reference-explorer-query-segment-visible-position-at-point)
+        (progn (search-forward "Example Link") (match-beginning 0))))))
+
+(ert-deftest reference-explorer-query-segment-segments-japanese-with-mecab ()
+  (skip-unless (executable-find reference-explorer-query-segment-mecab-program))
+  (with-temp-buffer
+    (insert "日本語の文章")
+    (goto-char 2)
+    (should (equal (reference-explorer-query-segment-word-at-point) "日本語"))
+    (goto-char 5)
+    (should (equal (reference-explorer-query-segment-word-at-point) "文章"))))
+
+(ert-deftest reference-explorer-query-segment-segments-visible-japanese-org-link ()
+  (skip-unless (executable-find reference-explorer-query-segment-mecab-program))
+  (require 'org)
+  (with-temp-buffer
+    (org-mode)
+    (insert "[[https://example.com][日本語の文章]]")
+    (goto-char (point-min))
+    (should (equal (reference-explorer-query-segment-word-at-point) "日本語"))))
+
+(ert-deftest reference-explorer-query-segment-prefers-longest-japanese-compound ()
+  (skip-unless (executable-find reference-explorer-query-segment-mecab-program))
+  (with-temp-buffer
+    (insert "東京都庁")
+    (goto-char 2)
+    (should (equal (reference-explorer-query-segment-word-at-point) "東京都庁"))
+    (should (member "東京"
+                    (reference-explorer-query-segment-word-candidates-at-point)))))
+
+(ert-deftest reference-explorer-query-segment-does-not-cross-japanese-particles ()
+  (skip-unless (executable-find reference-explorer-query-segment-mecab-program))
+  (with-temp-buffer
+    (insert "日本語の文章")
+    (goto-char 2)
+    (should (equal (reference-explorer-query-segment-word-at-point) "日本語"))))
+
+(provide 'reference-explorer-query-segment-test)
+;;; reference-explorer-query-segment-test.el ends here

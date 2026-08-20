@@ -27,7 +27,7 @@ if ! command -v "$emacs_program" >/dev/null 2>&1; then
 fi
 
 script_directory=$(CDPATH='' cd -- "$(/usr/bin/dirname -- "$0")" && pwd -P)
-source_file=$script_directory/../native/reference-explorer-macos-module.m
+source_file=$script_directory/../native/reference-explorer-provider-macos-module.m
 clang_program=$(xcrun --find clang)
 sdk_path=$(xcrun --show-sdk-path)
 
@@ -65,8 +65,8 @@ fi
 
 module_suffix=$("$emacs_program" --batch -Q --eval '(princ module-file-suffix)')
 site_lisp_directory=${REFERENCE_EXPLORER_MODULE_DIRECTORY:-$HOME/.emacs.d/site-lisp/reference-explorer}
-module_file=$site_lisp_directory/reference-explorer-macos-module$module_suffix
-revision_file=$site_lisp_directory/reference-explorer-macos-module.revision
+module_file=$site_lisp_directory/reference-explorer-provider-macos-module$module_suffix
+revision_file=$site_lisp_directory/reference-explorer-provider-macos-module.revision
 fingerprint=$(
     {
         cksum "$source_file"
@@ -82,16 +82,16 @@ module_loads() {
                   (module-load \"$module_file\")
 	                  (unless
 	                      (and
-	                       (fboundp 'reference-explorer-macos-show-definition)
+	                       (fboundp 'reference-explorer-provider-macos-show-definition)
 	                       (fboundp
-	                        'reference-explorer-macos-show-definition-with-font)
+	                        'reference-explorer-provider-macos-show-definition-with-font)
 	                       (fboundp
-	                        'reference-explorer-macos-show-definition-at-offset)
-	                       (fboundp 'reference-explorer-macos-term-at-offset)
+	                        'reference-explorer-provider-macos-show-definition-at-offset)
+	                       (fboundp 'reference-explorer-provider-macos-term-at-offset)
 	                       (fboundp
-	                        'reference-explorer-macos-selection-at-offset)
+	                        'reference-explorer-provider-macos-selection-at-offset)
 	                       (fboundp
-	                        'reference-explorer-macos-hide-definition))
+	                        'reference-explorer-provider-macos-hide-definition))
 	                    (kill-emacs 1)))" >/dev/null 2>&1
 }
 
@@ -106,9 +106,9 @@ then
     exit 0
 fi
 
-temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/reference-explorer-macos.XXXXXX")
+temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/reference-explorer-provider-macos.XXXXXX")
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
-built_module=$temporary_directory/reference-explorer-macos-module$module_suffix
+built_module=$temporary_directory/reference-explorer-provider-macos-module$module_suffix
 module_cache=$temporary_directory/clang-module-cache
 /bin/mkdir -p "$module_cache"
 
@@ -130,7 +130,7 @@ CLANG_MODULE_CACHE_PATH=$module_cache \
     -o "$built_module"
 
 /bin/mkdir -p "$site_lisp_directory"
-staged_module=$site_lisp_directory/.reference-explorer-macos-module$module_suffix.tmp.$$
+staged_module=$site_lisp_directory/.reference-explorer-provider-macos-module$module_suffix.tmp.$$
 /bin/cp "$built_module" "$staged_module"
 /bin/mv -f "$staged_module" "$module_file"
 printf '%s\n' "$fingerprint" >"$revision_file"
