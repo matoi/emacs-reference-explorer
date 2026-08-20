@@ -126,7 +126,7 @@ It receives the minibuffer input string and returns the backend query string."
     '(lookup))
   "Provider order used by `reference-explorer-at-point'.
 The default macOS chain searches a docset configured for the originating
-major mode, then uses the system Dictionary popup, then GNU Lookup.  Adding
+major mode, then uses the system Dictionary popup, then Lookup.  Adding
 `monokakido' at the front makes the global H-. command open Dictionaries by
 Monokakido first.  A provider not listed here remains available to explicit
 commands and actions."
@@ -2387,7 +2387,7 @@ Selection styling is applied by the renderer across the complete visual row."
                   (selected-window))))))
 
 (defun reference-explorer-ui-thesaurus-lookup (candidate)
-  "Open thesaurus CANDIDATE with GNU Lookup."
+  "Open thesaurus CANDIDATE with Lookup."
   (interactive)
   (reference-explorer-ui--thesaurus-run-provider candidate 'lookup))
 

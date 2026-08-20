@@ -1,8 +1,8 @@
-;;; reference-explorer-source-lookup-homebrew.el --- Homebrew GNU Lookup setup -*- lexical-binding: t -*-
+;;; reference-explorer-source-lookup-homebrew.el --- Homebrew Lookup setup -*- lexical-binding: t -*-
 
 ;;; Commentary:
 
-;; Optional helper for a GNU Lookup installation supplied by Homebrew.  Load
+;; Optional helper for a Lookup for Emacs installation supplied by Homebrew.  Load
 ;; and call `reference-explorer-source-lookup-homebrew-configure' before loading
 ;; `reference-explorer-source-lookup'.  The Lookup source does not call it.
 
@@ -12,7 +12,7 @@
 (require 'seq)
 
 (defcustom reference-explorer-source-lookup-homebrew-prefix nil
-  "Homebrew prefix used to locate GNU Lookup, EBLook, and MeCab.
+  "Homebrew prefix used to locate Lookup for Emacs, EBLook, and MeCab.
 Nil infers the prefix from the environment, `brew', or common locations."
   :type '(choice (const :tag "Infer" nil) directory)
   :group 'reference-explorer)
@@ -38,7 +38,7 @@ Nil infers the prefix from the environment, `brew', or common locations."
 
 ;;;###autoload
 (defun reference-explorer-source-lookup-homebrew-configure ()
-  "Configure GNU Lookup, EBLook, and its MeCab backend from Homebrew.
+  "Configure Lookup for Emacs, EBLook, and its MeCab backend from Homebrew.
 Call this before loading `reference-explorer-source-lookup' so `lookup-kanji' sees
 the selected backend during initialization."
   (interactive)

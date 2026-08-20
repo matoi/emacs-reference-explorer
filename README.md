@@ -6,7 +6,7 @@ Dictionaries by Monokakido, a Dash-compatible docset backend and manager, and
 an asynchronous thesaurus backend.
 
 The package owns retrieval, provider dispatch, Quick and Consult selection,
-preview child frames, GNU Lookup integration, Embark actions, and thesaurus
+preview child frames, Lookup for Emacs integration, Embark actions, and thesaurus
 and docset presentation. Optional integrations activate when their libraries
 are available.
 
@@ -22,11 +22,11 @@ With Emacs 29 or later, install the repository through `package-vc`:
 (require 'reference-explorer-source-lookup)
 ```
 
-GNU Lookup, Consult, Embark, Vertico, and Popper integrations are optional.
+Lookup for Emacs, Consult, Embark, Vertico, and Popper integrations are optional.
 The core provider dispatcher, docset backend, Monokakido provider, and
 thesaurus backend use Emacs built-ins.
 
-When GNU Lookup, EBLook, and MeCab are installed through Homebrew, configure
+When Lookup for Emacs, EBLook, and MeCab are installed through Homebrew, configure
 their paths and select Lookup's MeCab backend before loading the UI:
 
 ```elisp
@@ -48,12 +48,12 @@ dispatch, and fallback. `reference-explorer-provider-macos.el` and
 `reference-explorer-provider-monokakido.el` register reference providers with
 that dispatcher. `reference-explorer-ui.el` owns source-independent query
 selection, Quick and Consult sessions, child-frame previews, and interaction
-state. `reference-explorer-source-lookup.el` owns only the GNU Lookup search,
+state. `reference-explorer-source-lookup.el` owns only the Lookup search,
 ranking, entry rendering, Lookup commands, and provider registration. Docset
 retrieval and thesaurus retrieval remain in their respective source modules.
 
 Provider order is controlled by `reference-explorer-ui-provider-order`.
-On macOS the default order is docset, system Dictionary, then GNU Lookup.
+On macOS the default order is docset, system Dictionary, then Lookup.
 Monokakido remains available explicitly unless it is added to that order. A
 provider falls through only when it signals that it is unavailable; an empty
 result does not silently change providers.
@@ -139,14 +139,14 @@ scripts/manage-docsets.sh update MANIFEST
 
 `reference-explorer-ui-thesaurus-at-point` retrieves synonyms for the
 active region or contextual phrase. Candidate movement previews definitions
-through local GNU Lookup and performs no additional online request. Configure
+through local Lookup and performs no additional online request. Configure
 `reference-explorer-source-lookup-thesaurus-preview-sources` with displayed Lookup
 dictionary titles to prioritize those previews; nil retains normal source
 order.
 
 Accepting a candidate replaces the captured source text while preserving
 simple capitalization. Replacement is refused if the source changed during
-the asynchronous request. Embark actions provide replacement, GNU Lookup,
+the asynchronous request. Embark actions provide replacement, Lookup,
 copying, and a new synonym search rooted at the selected term.
 
 `reference-explorer-source-thesaurus.el` talks directly to PowerThesaurus rather than

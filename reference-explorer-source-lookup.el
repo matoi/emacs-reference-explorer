@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; GNU Lookup search, ranking, entry rendering, commands, and provider
+;; Lookup search, ranking, entry rendering, commands, and provider
 ;; integration.  Its primary purpose is searching locally installed EPWING
 ;; and EBXA dictionary data through Lookup's `ndeb' agent and EBLook.  Shared
 ;; Quick, Consult, preview, and interaction UI lives in `reference-explorer-ui'.
@@ -41,7 +41,7 @@
 (defvar savehist-additional-variables)
 
 (defconst reference-explorer-source-lookup-content-buffer-name "*Lookup Content*"
-  "Buffer used for committed GNU Lookup content.")
+  "Buffer used for committed Lookup content.")
 
 (declare-function lookup-content-mode "lookup-content" ())
 (declare-function lookup-dictionary-methods "lookup-types" (dictionary))
@@ -70,10 +70,10 @@
   (defvar embark-keymap-alist))
 
 (defvar reference-explorer-source-lookup-embark-map (make-sparse-keymap)
-  "Embark actions for GNU Lookup entries.")
+  "Embark actions for Lookup entries.")
 
 (defgroup reference-explorer-source-lookup nil
-  "GNU Lookup search source for Reference Explorer."
+  "Lookup for Emacs search source for Reference Explorer."
   :group 'reference-explorer-ui)
 
 (defcustom reference-explorer-source-lookup-source-order nil
@@ -626,14 +626,14 @@ Contextual input always starts in literal mode."
     (reference-explorer-source-lookup--consult-loop initial 'literal queries)))
 
 (defun reference-explorer-source-lookup-provider-available-p ()
-  "Return non-nil when GNU Lookup is available."
+  "Return non-nil when Lookup is available."
   (or (fboundp 'lookup-initialize) (locate-library "lookup")))
 
 (defun reference-explorer-source-lookup-provider-display (context)
-  "Display reference CONTEXT with quick GNU Lookup."
+  "Display reference CONTEXT with quick Lookup."
   (unless (reference-explorer-source-lookup-provider-available-p)
     (signal 'reference-explorer-provider-unavailable
-            '("GNU Lookup is unavailable")))
+            '("Lookup is unavailable")))
   (reference-explorer-source-lookup-quick-lookup-query
    (reference-explorer-context-query context)
    (reference-explorer-context-window context)
