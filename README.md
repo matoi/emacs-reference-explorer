@@ -29,8 +29,10 @@ Lookup for Emacs, [Consult](https://github.com/minad/consult),
 The core provider dispatcher, docset backend, Monokakido provider, and
 thesaurus backend use Emacs built-ins.
 
-When Lookup for Emacs, EBLook, and MeCab are installed through Homebrew, configure
-their paths and select Lookup's MeCab backend before loading the UI:
+When [Lookup for Emacs](http://ikazuhiro.s206.xrea.com/staticpages/index.php/lookup),
+[EBLook](http://green.ribbon.to/~ikazuhiro/lookup/lookup.html#EBLOOK), and
+[MeCab](https://taku910.github.io/mecab/) are installed through Homebrew,
+configure their paths and select Lookup's MeCab backend before loading the UI:
 
 ```elisp
 (require 'reference-explorer-source-lookup-homebrew)
