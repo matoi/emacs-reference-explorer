@@ -1,11 +1,37 @@
-;;; reference-explorer-lookup.el --- Shared dictionary lookup -*- lexical-binding: t -*-
+;;; reference-explorer-lookup.el --- UI backed by Lookup for Emacs -*- lexical-binding: t -*-
 
 ;;; Commentary:
 
-;; Common Lookup behavior.  Dictionary locations, modules, and display names
-;; are configured through Lookup's native variables.  Lookup searches and
-;; renders content; quick child frames and Consult provide complementary
-;; entry-selection interfaces.
+;; This module connects Reference Explorer to the external Lookup for Emacs
+;; package (the library and feature named `lookup').  Lookup for Emacs is not
+;; bundled with Reference Explorer or Emacs.  It owns dictionary agents,
+;; searches, entry objects, and entry rendering; this module adds Quick and
+;; Consult selectors, child-frame previews, Embark actions, and integration
+;; with Reference Explorer providers.
+;;
+;; The tested distribution is Lookup 1.4+media, published from:
+;;
+;;   http://ikazuhiro.s206.xrea.com/staticpages/index.php/lookup
+;;
+;; On Homebrew systems it and EBLook can be installed with:
+;;
+;;   brew install matoi/tap/emacs-lookup
+;;
+;; Then configure its Lisp and executable paths before loading this module:
+;;
+;;   (require 'reference-explorer-lookup-homebrew)
+;;   (reference-explorer-lookup-homebrew-configure)
+;;   (require 'reference-explorer-lookup)
+;;
+;; For another Lookup installation, put its Lisp directory on `load-path' and
+;; configure its native variables such as `lookup-search-agents',
+;; `lookup-search-modules', and `lookup-dictionary-options-alist' before
+;; loading this module.  Dictionary files and search-agent configuration are
+;; deliberately not owned by Reference Explorer.
+;;
+;; This file remains loadable when Lookup for Emacs is absent.  In that case
+;; Lookup-backed commands report that Lookup is unavailable, while docset,
+;; thesaurus, macOS Dictionary, and Monokakido functionality can still be used.
 
 ;;; Code:
 
