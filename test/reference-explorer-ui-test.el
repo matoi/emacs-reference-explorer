@@ -1149,6 +1149,12 @@
       (should (equal (reference-explorer-source-lookup--plain-entry-heading 'entry)
                      "fixed-heading")))))
 
+(ert-deftest reference-explorer-ui-hides-expanded-heading-source-word ()
+  (cl-letf (((symbol-function 'lookup-entry-heading)
+             (lambda (_entry) "[renders ->] render")))
+    (should (equal (reference-explorer-source-lookup--plain-entry-heading 'entry)
+                   "render"))))
+
 (ert-deftest reference-explorer-ui-keeps-ordinary-leading-underscore ()
   (cl-letf (((symbol-function 'lookup-entry-heading)
              (lambda (_entry) "_identifier")))

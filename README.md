@@ -71,7 +71,9 @@ selector for exact and prefix matches. `H-n` and `H-p` move through results,
 and `H-s` and `H-e` select shorter and longer contextual phrases. The source
 query is highlighted in its original buffer. A no-match selector remains open
 so another contextual length can be tried; an unrelated key closes it and is
-handled normally by the source buffer.
+handled normally by the source buffer. Lookup's expanded-heading provenance,
+such as `[renders ->]`, is omitted because the active query is already visible
+in the Reference Explorer UI.
 
 `reference-explorer-source-lookup-consult-at-point` starts the Consult interface with
 the active region or phrase at point. Its `H-s` and `H-e` bindings use the same

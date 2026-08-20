@@ -94,6 +94,10 @@ is performed afterward."
   :type 'hook
   :group 'reference-explorer-source-lookup)
 
+(defconst reference-explorer-source-lookup--expanded-heading-prefix-regexp
+  "\\`\\[[^]\n]+ ->\\][ \t　]*"
+  "Regexp matching Lookup's source-word prefix on expanded headings.")
+
 (defcustom reference-explorer-source-lookup-preview-highlight-sources nil
   "Dictionary source titles whose preview content highlights the query.
 Titles are compared with the displayed source name returned by Lookup.  An
@@ -189,12 +193,15 @@ groups are ordered by `reference-explorer-source-lookup-source-order'."
   (reference-explorer-source-lookup--ranked-entries input 'literal 'prefix))
 
 (defun reference-explorer-source-lookup--plain-entry-heading (entry)
-  "Return ENTRY's heading without rich display properties or edge spaces."
+  "Return ENTRY's plain heading without expansion provenance or edge spaces."
   (let ((heading (lookup-entry-heading entry)))
     (dolist (filter reference-explorer-source-lookup-heading-filter-functions)
       (setq heading (funcall filter entry heading)))
-    (string-trim (substring-no-properties heading)
-                 "[ \t\n\r　]+" "[ \t\n\r　]+")))
+    (string-trim
+     (replace-regexp-in-string
+      reference-explorer-source-lookup--expanded-heading-prefix-regexp ""
+      (substring-no-properties heading))
+     "[ \t\n\r　]+" "[ \t\n\r　]+")))
 
 (defun reference-explorer-source-lookup--entry-candidates (input mode)
   "Return Consult candidates for Lookup INPUT in MODE."
@@ -243,7 +250,8 @@ groups are ordered by `reference-explorer-source-lookup-source-order'."
 (defun reference-explorer-source-lookup--insert-entry-content (entry)
   "Insert the rendered body of Lookup ENTRY in the current buffer."
   (setq lookup-content-current-entry entry
-        lookup-content-line-heading (lookup-entry-heading entry))
+        lookup-content-line-heading
+        (reference-explorer-source-lookup--plain-entry-heading entry))
   (if (lookup-reference-p entry)
       (insert "(no contents)")
     (lookup-vse-insert-content entry)))
