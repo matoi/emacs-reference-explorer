@@ -22,7 +22,10 @@ With Emacs 29 or later, install the repository through `package-vc`:
 (require 'reference-explorer-source-lookup)
 ```
 
-Lookup for Emacs, Consult, Embark, Vertico, and Popper integrations are optional.
+Lookup for Emacs, [Consult](https://github.com/minad/consult),
+[Embark](https://github.com/oantolin/embark),
+[Vertico](https://github.com/minad/vertico), and
+[Popper](https://github.com/karthink/popper) integrations are optional.
 The core provider dispatcher, docset backend, Monokakido provider, and
 thesaurus backend use Emacs built-ins.
 
