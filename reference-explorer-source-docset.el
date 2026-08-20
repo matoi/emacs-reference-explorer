@@ -2,10 +2,13 @@
 
 ;;; Commentary:
 
-;; A small backend for the documented Dash docset layout.  It deliberately
-;; owns no selection UI: callers receive structured results and can render a
-;; selected result with SHR.  Searching is local and uses Emacs's built-in
-;; SQLite support, so no shell command is assembled from user input.
+;; A small backend for the Dash docset layout documented by Kapeli at
+;; https://kapeli.com/docsets.  Dash itself is available from
+;; https://kapeli.com/dash.  This is an independent compatible reader and is
+;; not affiliated with or endorsed by Kapeli.  It deliberately owns no
+;; selection UI: callers receive structured results and can render a selected
+;; result with SHR.  Searching is local and uses Emacs's built-in SQLite
+;; support, so no shell command is assembled from user input.
 
 ;;; Code:
 

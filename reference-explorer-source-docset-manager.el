@@ -2,8 +2,13 @@
 
 ;;; Commentary:
 
-;; Network and mutation operations for `reference-explorer-source-docset'.  The search backend
-;; remains entirely local.  Specs are explicit:
+;; Network and mutation operations for `reference-explorer-source-docset'.
+;; The default catalog is Kapeli's Dash feed repository at
+;; https://github.com/Kapeli/feeds, whose XML entries point to docset archives
+;; hosted by Kapeli.  Review that repository's usage notice and the licensing
+;; of each documentation source before downloading or using a docset.  This is
+;; an independent integration and is not affiliated with or endorsed by
+;; Kapeli.  The search backend remains entirely local.  Specs are explicit:
 ;;
 ;;   Ruby@3.3.*       newest feed entry in the explicitly named 3.3 series
 ;;   Python@3.12.6    exact feed entry

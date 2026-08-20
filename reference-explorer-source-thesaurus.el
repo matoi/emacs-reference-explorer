@@ -3,9 +3,13 @@
 ;;; Commentary:
 
 ;; Retrieve thesaurus candidates without imposing a presentation layer.  The
-;; default backend uses PowerThesaurus's GraphQL service, but the public fetch
-;; function is replaceable and the rest of the reference UI does not depend on
-;; the service's data representation.
+;; default backend retrieves data from the Power Thesaurus website
+;; (https://www.powerthesaurus.org/) through its GraphQL endpoint at
+;; https://api.powerthesaurus.org.  This is an independent integration and is
+;; not affiliated with or endorsed by Power Thesaurus.  Use of the service is
+;; subject to its terms at https://www.powerthesaurus.org/_terms_conditions.
+;; The public fetch function is replaceable, and the rest of the reference UI
+;; does not depend on the service's data representation.
 
 ;;; Code:
 
@@ -19,7 +23,7 @@
   :group 'applications)
 
 (defcustom reference-explorer-source-thesaurus-api-url "https://api.powerthesaurus.org"
-  "GraphQL endpoint used by the default thesaurus backend."
+  "Power Thesaurus GraphQL endpoint used by the default backend."
   :type 'string
   :group 'reference-explorer-source-thesaurus)
 
@@ -48,7 +52,7 @@ starts only when this function is called explicitly."
   source)
 
 (defvar reference-explorer-source-thesaurus--term-id-cache (make-hash-table :test #'equal)
-  "PowerThesaurus term IDs cached by normalized query.")
+  "Power Thesaurus term IDs cached by normalized query.")
 
 (defvar reference-explorer-source-thesaurus--result-cache (make-hash-table :test #'equal)
   "Completed result lists cached by normalized query and relation type.")
@@ -62,7 +66,7 @@ starts only when this function is called explicitly."
     terms { id name }
   }
 }"
-  "GraphQL query resolving text to a PowerThesaurus term ID.")
+  "GraphQL query resolving text to a Power Thesaurus term ID.")
 
 (defconst reference-explorer-source-thesaurus--relations-query
   "query THESAURUS($termID: ID!, $type: List!, $sort: ThesaurusSorting!) {
@@ -84,7 +88,7 @@ starts only when this function is called explicitly."
   (downcase (string-trim (substring-no-properties query))))
 
 (defun reference-explorer-source-thesaurus--type-name (type)
-  "Return the PowerThesaurus relation name for TYPE."
+  "Return the Power Thesaurus relation name for TYPE."
   (pcase type
     ('synonyms "SYNONYM")
     ('antonyms "ANTONYM")
@@ -92,7 +96,7 @@ starts only when this function is called explicitly."
     (_ (error "Unsupported thesaurus query type: %s" type))))
 
 (defun reference-explorer-source-thesaurus-clear-cache ()
-  "Forget all completed PowerThesaurus lookups."
+  "Forget all completed Power Thesaurus lookups."
   (interactive)
   (clrhash reference-explorer-source-thesaurus--term-id-cache)
   (clrhash reference-explorer-source-thesaurus--result-cache))
@@ -115,7 +119,7 @@ starts only when this function is called explicitly."
   "Return a readable GraphQL error from RESPONSE, or nil."
   (when-let ((errors (alist-get 'errors response)))
     (or (alist-get 'message (car errors))
-        "PowerThesaurus returned an unspecified GraphQL error")))
+        "Power Thesaurus returned an unspecified GraphQL error")))
 
 (defun reference-explorer-source-thesaurus--post (variables query success failure)
   "POST GraphQL QUERY with VARIABLES, then call SUCCESS or FAILURE."
@@ -132,7 +136,7 @@ starts only when this function is called explicitly."
          (unwind-protect
              (condition-case error-data
                  (if-let ((network-error (plist-get status :error)))
-                     (funcall failure (format "PowerThesaurus request failed: %s"
+                     (funcall failure (format "Power Thesaurus request failed: %s"
                                               network-error))
                    (goto-char (point-min))
                    (unless (re-search-forward "\r?\n\r?\n" nil t)

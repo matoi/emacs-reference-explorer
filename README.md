@@ -124,11 +124,21 @@ and scope restrictions are configured with
 
 ## Docsets
 
-The Dash-compatible backend discovers installed docsets, selects versions by
-major mode, searches their SQLite indexes, and renders only the matched entry.
-Selectors accept a latest version, an exact version, or a version series. The
-manager resolves a selector to one concrete bundle before installation, so
-equivalent selectors do not create duplicate contents.
+The backend reads the docset format documented in Kapeli's [Dash Docset
+Generation Guide](https://kapeli.com/docsets). [Dash](https://kapeli.com/dash)
+is a documentation browser by Kapeli; Reference Explorer is an independent
+compatible reader and is not affiliated with or endorsed by Kapeli. The
+backend discovers installed docsets, selects versions by major mode, searches
+their SQLite indexes, and renders only the matched entry. Selectors accept a
+latest version, an exact version, or a version series. The manager resolves a
+selector to one concrete bundle before installation, so equivalent selectors
+do not create duplicate contents.
+
+By default, the manager discovers feeds from Kapeli's [Dash docset feed
+repository](https://github.com/Kapeli/feeds) and downloads the archives named
+by those feeds from Kapeli's servers. That repository includes restrictions on
+using its docsets in third-party applications; review its usage notice and the
+license of each documentation source before installing or using a docset.
 
 Graphical previews use WebKit when available and fall back to SHR; committed
 content and terminal Emacs use SHR. The renderer isolates the selected entry,
@@ -156,12 +166,18 @@ simple capitalization. Replacement is refused if the source changed during
 the asynchronous request. Embark actions provide replacement, Lookup,
 copying, and a new synonym search rooted at the selected term.
 
-`reference-explorer-source-thesaurus.el` talks directly to PowerThesaurus rather than
-loading the Emacs `powerthesaurus` package. An uncached search obtains the term
-identifier and then its complete relation list. Completed results and term
-identifiers are cached in memory, and concurrent identical searches share the
-same pending requests. Incremental input, candidate movement, and previews do
-not initiate network requests.
+The default online source is [Power Thesaurus](https://www.powerthesaurus.org/).
+`reference-explorer-source-thesaurus.el` sends requests directly to its
+[GraphQL endpoint](https://api.powerthesaurus.org/) rather than loading the Emacs
+`powerthesaurus` package. Reference Explorer is an independent integration and
+is not affiliated with or endorsed by Power Thesaurus. Use of the service is
+subject to the [Power Thesaurus Terms and
+Conditions](https://www.powerthesaurus.org/_terms_conditions).
+
+An uncached search obtains the term identifier and then its complete relation
+list. Completed results and term identifiers are cached in memory, and
+concurrent identical searches share the same pending requests. Incremental
+input, candidate movement, and previews do not initiate network requests.
 
 ## Phrase selection
 

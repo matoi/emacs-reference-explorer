@@ -655,7 +655,7 @@ SHOW-DOCSET-SOURCE keeps the source name when several docsets are searched."
   (if (or (reference-explorer-source-docset-result-p candidate)
           (not (reference-explorer-ui--thesaurus-candidate-p candidate)))
       candidate
-    ;; Candidate navigation must never contact PowerThesaurus.  Reuse the
+    ;; Candidate navigation must never contact Power Thesaurus.  Reuse the
     ;; local Lookup backend, whose own result cache also makes revisiting a
     ;; candidate inexpensive.
     (when (and (fboundp 'reference-explorer-source-lookup-provider-available-p)
