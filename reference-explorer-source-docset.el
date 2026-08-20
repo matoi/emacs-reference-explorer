@@ -9,6 +9,9 @@
 
 ;;; Code:
 
+(defconst reference-explorer-source-docset-content-buffer-name "*Docset Reference*"
+  "Buffer used for committed docset content.")
+
 (require 'cl-lib)
 (require 'dom)
 (require 'json)

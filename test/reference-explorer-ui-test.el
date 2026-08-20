@@ -1,93 +1,95 @@
-;;; reference-explorer-source-lookup-test.el --- Reference lookup tests -*- lexical-binding: t -*-
+;;; reference-explorer-ui-test.el --- Reference lookup tests -*- lexical-binding: t -*-
 
 (require 'ert)
 (require 'reference-explorer-source-lookup)
 
-(ert-deftest reference-explorer-source-lookup-keeps-monokakido-explicit-by-default ()
+(ert-deftest reference-explorer-ui-keeps-monokakido-explicit-by-default ()
   (should (memq 'monokakido (reference-explorer-provider-names)))
-  (should-not (memq 'monokakido reference-explorer-source-lookup-provider-order))
-  (should (eq (car reference-explorer-source-lookup-provider-order) 'docset)))
+  (should-not (memq 'monokakido reference-explorer-ui-provider-order))
+  (should (eq (car reference-explorer-ui-provider-order) 'docset)))
 
-(ert-deftest reference-explorer-source-lookup-provider-order-customization-is-live ()
-  (let ((original reference-explorer-source-lookup-provider-order))
+(ert-deftest reference-explorer-ui-provider-order-customization-is-live ()
+  (let ((original reference-explorer-ui-provider-order))
     (unwind-protect
         (progn
-          (reference-explorer-source-lookup--set-provider-order
-           'reference-explorer-source-lookup-provider-order
+          (reference-explorer-ui--set-provider-order
+           'reference-explorer-ui-provider-order
            '(monokakido macos-dictionary lookup))
           (should
            (equal reference-explorer-provider-rules
                   '((t . (monokakido macos-dictionary lookup))))))
-      (reference-explorer-source-lookup--set-provider-order
-       'reference-explorer-source-lookup-provider-order original))))
+      (reference-explorer-ui--set-provider-order
+       'reference-explorer-ui-provider-order original))))
 
-(ert-deftest reference-explorer-source-lookup-converts-standard-roman-readings ()
-  (should (equal (reference-explorer-source-lookup--roman-to-hiragana "kankyo")
+(ert-deftest reference-explorer-ui-converts-standard-roman-readings ()
+  (should (equal (reference-explorer-ui--roman-to-hiragana "kankyo")
                  "かんきょ"))
-  (should (equal (reference-explorer-source-lookup--roman-to-hiragana "nihon")
+  (should (equal (reference-explorer-ui--roman-to-hiragana "nihon")
                  "にほん"))
-  (should (equal (reference-explorer-source-lookup--roman-to-hiragana "kanna")
+  (should (equal (reference-explorer-ui--roman-to-hiragana "kanna")
                  "かんな")))
 
-(ert-deftest reference-explorer-source-lookup-conversion-keeps-last-complete-reading ()
-  (should (equal (reference-explorer-source-lookup--roman-to-hiragana "kanky")
+(ert-deftest reference-explorer-ui-conversion-keeps-last-complete-reading ()
+  (should (equal (reference-explorer-ui--roman-to-hiragana "kanky")
                  "かん")))
 
-(ert-deftest reference-explorer-source-lookup-does-not-search-an-incomplete-first-syllable ()
-  (should-not (reference-explorer-source-lookup--backend-query "k" 'converted)))
+(ert-deftest reference-explorer-ui-does-not-search-an-incomplete-first-syllable ()
+  (should-not (reference-explorer-ui--backend-query "k" 'converted)))
 
-(ert-deftest reference-explorer-source-lookup-converted-query-normalizes-katakana ()
-  (should (equal (reference-explorer-source-lookup--backend-query "カンキョウ" 'converted)
+(ert-deftest reference-explorer-ui-converted-query-normalizes-katakana ()
+  (should (equal (reference-explorer-ui--backend-query "カンキョウ" 'converted)
                  "かんきょう")))
 
-(ert-deftest reference-explorer-source-lookup-converted-query-function-is-pluggable ()
-  (let ((reference-explorer-source-lookup-query-conversion-function
+(ert-deftest reference-explorer-ui-converted-query-function-is-pluggable ()
+  (let ((reference-explorer-ui-query-conversion-function
          (lambda (input) (concat "converted:" input))))
-    (should (equal (reference-explorer-source-lookup--backend-query "term" 'converted)
+    (should (equal (reference-explorer-ui--backend-query "term" 'converted)
                    "converted:term"))))
 
-(ert-deftest reference-explorer-source-lookup-literal-query-is-unchanged ()
-  (should (equal (reference-explorer-source-lookup--backend-query "environment" 'literal)
+(ert-deftest reference-explorer-ui-literal-query-is-unchanged ()
+  (should (equal (reference-explorer-ui--backend-query "environment" 'literal)
                  "environment")))
 
-(ert-deftest reference-explorer-source-lookup-converted-completion-style-is-injected ()
+(ert-deftest reference-explorer-ui-converted-completion-style-is-injected ()
   (let ((features (append '(migemo orderless) features))
-        (reference-explorer-source-lookup-converted-completion-style 'test-migemo-style)
+        (reference-explorer-ui-converted-completion-style 'test-migemo-style)
         (completion-category-overrides nil))
     (should
-     (equal (reference-explorer-source-lookup--completion-overrides 'converted)
+     (equal (reference-explorer-ui--completion-overrides
+             'converted 'reference-explorer-source-lookup-entry)
             '((reference-explorer-source-lookup-entry
                (styles test-migemo-style basic)))))))
 
-(ert-deftest reference-explorer-source-lookup-converted-completion-requires-a-style ()
+(ert-deftest reference-explorer-ui-converted-completion-requires-a-style ()
   (let ((features (append '(migemo orderless) features))
-        (reference-explorer-source-lookup-converted-completion-style nil))
-    (should-error (reference-explorer-source-lookup--completion-overrides 'converted)
+        (reference-explorer-ui-converted-completion-style nil))
+    (should-error (reference-explorer-ui--completion-overrides
+                   'converted 'reference-explorer-source-lookup-entry)
                   :type 'user-error)))
 
-(ert-deftest reference-explorer-source-lookup-consult-mode-toggle-key ()
-  (should (eq (lookup-key reference-explorer-source-lookup-consult-map (kbd "M-m"))
-              #'reference-explorer-source-lookup-toggle-consult-mode))
-  (should (eq (lookup-key reference-explorer-source-lookup-consult-map (kbd "H-s"))
-              #'reference-explorer-source-lookup-consult-shorten-query))
-  (should (eq (lookup-key reference-explorer-source-lookup-consult-map (kbd "H-e"))
-              #'reference-explorer-source-lookup-consult-expand-query))
-  (should (eq (lookup-key reference-explorer-source-lookup-consult-map (kbd "H-."))
-              #'reference-explorer-source-lookup-consult-open-reference))
-  (should (eq (lookup-key reference-explorer-source-lookup-consult-map (kbd "H-v"))
-              #'reference-explorer-source-lookup-preview-scroll-up))
-  (should (eq (lookup-key reference-explorer-source-lookup-consult-map (kbd "H-V"))
-              #'reference-explorer-source-lookup-preview-scroll-down))
-  (should (eq (lookup-key reference-explorer-source-lookup-consult-map (kbd "H-i"))
-              #'reference-explorer-source-lookup-consult-activate-preview))
-  (should-not (lookup-key reference-explorer-source-lookup-consult-map (kbd "H-M-.")))
-  (should (eq (lookup-key reference-explorer-source-lookup-consult-map (kbd "TAB"))
-              #'reference-explorer-source-lookup-select-candidate)))
+(ert-deftest reference-explorer-ui-consult-mode-toggle-key ()
+  (should (eq (lookup-key reference-explorer-ui-consult-map (kbd "M-m"))
+              #'reference-explorer-ui-toggle-consult-mode))
+  (should (eq (lookup-key reference-explorer-ui-consult-map (kbd "H-s"))
+              #'reference-explorer-ui-consult-shorten-query))
+  (should (eq (lookup-key reference-explorer-ui-consult-map (kbd "H-e"))
+              #'reference-explorer-ui-consult-expand-query))
+  (should (eq (lookup-key reference-explorer-ui-consult-map (kbd "H-."))
+              #'reference-explorer-ui-consult-open-reference))
+  (should (eq (lookup-key reference-explorer-ui-consult-map (kbd "H-v"))
+              #'reference-explorer-ui-preview-scroll-up))
+  (should (eq (lookup-key reference-explorer-ui-consult-map (kbd "H-V"))
+              #'reference-explorer-ui-preview-scroll-down))
+  (should (eq (lookup-key reference-explorer-ui-consult-map (kbd "H-i"))
+              #'reference-explorer-ui-consult-activate-preview))
+  (should-not (lookup-key reference-explorer-ui-consult-map (kbd "H-M-.")))
+  (should (eq (lookup-key reference-explorer-ui-consult-map (kbd "TAB"))
+              #'reference-explorer-ui-select-candidate)))
 
-(ert-deftest reference-explorer-source-lookup-consult-query-can-shrink-and-expand ()
-  (let ((reference-explorer-source-lookup--consult-query-options
+(ert-deftest reference-explorer-ui-consult-query-can-shrink-and-expand ()
+  (let ((reference-explorer-ui--consult-query-options
          '("公爵夫人" "公爵" "公"))
-        (reference-explorer-source-lookup--consult-query-index 0)
+        (reference-explorer-ui--consult-query-index 0)
         (input "公爵夫人"))
     (cl-letf (((symbol-function 'minibuffer-contents-no-properties)
                (lambda () input))
@@ -95,42 +97,42 @@
                (lambda () (setq input "")))
               ((symbol-function 'insert)
                (lambda (text) (setq input (concat input text)))))
-      (reference-explorer-source-lookup-consult-shorten-query)
+      (reference-explorer-ui-consult-shorten-query)
       (should (equal input "公爵"))
-      (reference-explorer-source-lookup-consult-shorten-query)
+      (reference-explorer-ui-consult-shorten-query)
       (should (equal input "公"))
-      (reference-explorer-source-lookup-consult-expand-query)
+      (reference-explorer-ui-consult-expand-query)
       (should (equal input "公爵")))))
 
-(ert-deftest reference-explorer-source-lookup-quick-selector-keymap-is-non-invasive ()
-  (should (eq (lookup-key reference-explorer-source-lookup-quick-map (kbd "H-n"))
-              #'reference-explorer-source-lookup-quick-next))
-  (should (eq (lookup-key reference-explorer-source-lookup-quick-map (kbd "H-p"))
-              #'reference-explorer-source-lookup-quick-previous))
-  (should (eq (lookup-key reference-explorer-source-lookup-quick-map (kbd "H-s"))
-              #'reference-explorer-source-lookup-quick-shorten-query))
-  (should (eq (lookup-key reference-explorer-source-lookup-quick-map (kbd "H-e"))
-              #'reference-explorer-source-lookup-quick-expand-query))
-  (should (eq (lookup-key reference-explorer-source-lookup-quick-map (kbd "H-q"))
-              #'reference-explorer-source-lookup-quick-quit))
-  (should (eq (lookup-key reference-explorer-source-lookup-quick-map (kbd "H-v"))
-              #'reference-explorer-source-lookup-preview-scroll-up))
-  (should (eq (lookup-key reference-explorer-source-lookup-quick-map (kbd "H-V"))
-              #'reference-explorer-source-lookup-preview-scroll-down))
-  (should (eq (lookup-key reference-explorer-source-lookup-quick-map (kbd "H-i"))
-              #'reference-explorer-source-lookup-quick-activate-preview))
-  (should (eq (lookup-key reference-explorer-source-lookup-quick-map (kbd "TAB"))
-              #'reference-explorer-source-lookup-quick-display-entry))
-  (should (eq (lookup-key reference-explorer-source-lookup-quick-map (kbd "H-."))
-              #'reference-explorer-source-lookup-quick-open-reference))
-  (should-not (lookup-key reference-explorer-source-lookup-quick-map (kbd "H-M-.")))
-  (should (eq (lookup-key reference-explorer-source-lookup-quick-map (kbd "M-m"))
-              #'reference-explorer-source-lookup-quick-open-consult))
+(ert-deftest reference-explorer-ui-quick-selector-keymap-is-non-invasive ()
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-n"))
+              #'reference-explorer-ui-quick-next))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-p"))
+              #'reference-explorer-ui-quick-previous))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-s"))
+              #'reference-explorer-ui-quick-shorten-query))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-e"))
+              #'reference-explorer-ui-quick-expand-query))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-q"))
+              #'reference-explorer-ui-quick-quit))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-v"))
+              #'reference-explorer-ui-preview-scroll-up))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-V"))
+              #'reference-explorer-ui-preview-scroll-down))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-i"))
+              #'reference-explorer-ui-quick-activate-preview))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "TAB"))
+              #'reference-explorer-ui-quick-display-entry))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-."))
+              #'reference-explorer-ui-quick-open-reference))
+  (should-not (lookup-key reference-explorer-ui-quick-map (kbd "H-M-.")))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "M-m"))
+              #'reference-explorer-ui-quick-open-consult))
   ;; Unrecognized keys must fall through the transient map to the source
   ;; buffer instead of being captured by quick Lookup.
-  (should-not (lookup-key reference-explorer-source-lookup-quick-map (kbd "a"))))
+  (should-not (lookup-key reference-explorer-ui-quick-map (kbd "a"))))
 
-(ert-deftest reference-explorer-source-lookup-quick-selector-passes-through-other-keys ()
+(ert-deftest reference-explorer-ui-quick-selector-passes-through-other-keys ()
   (with-temp-buffer
     (let ((map (make-sparse-keymap))
           exited)
@@ -140,20 +142,20 @@
       (should (equal (buffer-string) "a"))
       (should exited))))
 
-(ert-deftest reference-explorer-source-lookup-quick-reference-uses-provider-order ()
-  (let ((reference-explorer-source-lookup--quick-session
-         (reference-explorer-source-lookup--make-quick-session
+(ert-deftest reference-explorer-ui-quick-reference-uses-provider-order ()
+  (let ((reference-explorer-ui--quick-session
+         (reference-explorer-ui--make-quick-session
           :query "query"
           :source-marker (copy-marker 1)
           :source-window (selected-window)))
         dispatched)
     (cl-letf (((symbol-function 'reference-explorer-run-context)
                (lambda (context) (setq dispatched context))))
-      (reference-explorer-source-lookup-quick-open-reference)
+      (reference-explorer-ui-quick-open-reference)
       (should (equal (reference-explorer-context-query dispatched) "query")))))
 
-(ert-deftest reference-explorer-source-lookup-consult-reference-uses-provider-order ()
-  (let ((reference-explorer-source-lookup--consult-origin
+(ert-deftest reference-explorer-ui-consult-reference-uses-provider-order ()
+  (let ((reference-explorer-ui--consult-origin
          (reference-explorer-context-create
           :query nil
           :marker (copy-marker 1)
@@ -163,30 +165,30 @@
                (lambda () "edited query"))
               ((symbol-function 'reference-explorer-run-context)
                (lambda (context) (setq dispatched context))))
-      (reference-explorer-source-lookup-consult-open-reference)
+      (reference-explorer-ui-consult-open-reference)
       (should
        (equal (reference-explorer-context-query dispatched)
               "edited query")))))
 
-(ert-deftest reference-explorer-source-lookup-quick-selector-cycles-candidates ()
+(ert-deftest reference-explorer-ui-quick-selector-cycles-candidates ()
   (let* ((session
-          (reference-explorer-source-lookup--make-quick-session
+          (reference-explorer-ui--make-quick-session
            :entries '(first second third)
            :index 0))
-         (reference-explorer-source-lookup--quick-session session))
-    (cl-letf (((symbol-function 'reference-explorer-source-lookup--quick-refresh)
+         (reference-explorer-ui--quick-session session))
+    (cl-letf (((symbol-function 'reference-explorer-ui--quick-refresh)
                #'ignore))
-      (reference-explorer-source-lookup-quick-next)
-      (should (eq (reference-explorer-source-lookup--quick-current-entry) 'second))
-      (reference-explorer-source-lookup-quick-previous)
-      (should (eq (reference-explorer-source-lookup--quick-current-entry) 'first))
-      (reference-explorer-source-lookup-quick-previous)
-      (should (eq (reference-explorer-source-lookup--quick-current-entry) 'third)))))
+      (reference-explorer-ui-quick-next)
+      (should (eq (reference-explorer-ui--quick-current-entry) 'second))
+      (reference-explorer-ui-quick-previous)
+      (should (eq (reference-explorer-ui--quick-current-entry) 'first))
+      (reference-explorer-ui-quick-previous)
+      (should (eq (reference-explorer-ui--quick-current-entry) 'third)))))
 
-(ert-deftest reference-explorer-source-lookup-quick-list-renders-initial-selection ()
+(ert-deftest reference-explorer-ui-quick-list-renders-initial-selection ()
   (let* ((buffer (generate-new-buffer " *environment-quick-list-test*"))
          (session
-          (reference-explorer-source-lookup--make-quick-session
+          (reference-explorer-ui--make-quick-session
            :entries '(first second)
            :index 0
            :list-buffer buffer)))
@@ -194,14 +196,14 @@
         (cl-letf (((symbol-function 'lookup-entry-heading) #'symbol-name)
                   ((symbol-function 'reference-explorer-source-lookup-entry-source)
                    (lambda (_entry) "dictionary")))
-          (reference-explorer-source-lookup--quick-render-list session)
+          (reference-explorer-ui--quick-render-list session)
           (with-current-buffer buffer
             (should (equal (buffer-string)
                            (concat "first  dictionary\n"
                                    "second  dictionary\n")))
             (should
-             (reference-explorer-source-lookup--face-includes-p
-              'reference-explorer-source-lookup-quick-current
+             (reference-explorer-ui--face-includes-p
+              'reference-explorer-ui-quick-current
                (get-text-property
                (point-min)
                'face)))
@@ -209,146 +211,146 @@
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
-(ert-deftest reference-explorer-source-lookup-quick-list-renders-empty-result-state ()
+(ert-deftest reference-explorer-ui-quick-list-renders-empty-result-state ()
   (let* ((buffer (generate-new-buffer " *environment-quick-empty-test*"))
          (session
-          (reference-explorer-source-lookup--make-quick-session
+          (reference-explorer-ui--make-quick-session
            :entries nil
            :index 0
            :list-buffer buffer)))
     (unwind-protect
         (progn
-          (reference-explorer-source-lookup--quick-render-list session)
+          (reference-explorer-ui--quick-render-list session)
           (with-current-buffer buffer
             (should (equal (buffer-string) "一致なし"))
-            (should (reference-explorer-source-lookup--face-includes-p
+            (should (reference-explorer-ui--face-includes-p
                      'shadow (get-text-property (point-min) 'face)))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
-(ert-deftest reference-explorer-source-lookup-quick-highlights-source-query ()
+(ert-deftest reference-explorer-ui-quick-highlights-source-query ()
   (with-temp-buffer
     (insert "alpha beta")
     (let ((session
-           (reference-explorer-source-lookup--make-quick-session
+           (reference-explorer-ui--make-quick-session
             :query "alpha"
             :source-marker (copy-marker 3))))
-      (let ((reference-explorer-source-lookup-word-bound-candidates-function
+      (let ((reference-explorer-ui-word-bound-candidates-function
              (lambda () '((1 . 6)))))
-        (reference-explorer-source-lookup--quick-highlight-source session))
+        (reference-explorer-ui--quick-highlight-source session))
       (let ((overlay
-             (reference-explorer-source-lookup--quick-session-source-overlay session)))
+             (reference-explorer-ui--quick-session-source-overlay session)))
         (should (overlayp overlay))
         (should (equal (buffer-substring-no-properties
                         (overlay-start overlay) (overlay-end overlay))
                        "alpha"))
         (should (eq (overlay-get overlay 'face)
-                    'reference-explorer-source-lookup-source-highlight))))))
+                    'reference-explorer-ui-source-highlight))))))
 
-(ert-deftest reference-explorer-source-lookup-quick-list-scrolls-only-at-visible-edge ()
-  (let ((reference-explorer-source-lookup-quick-max-candidates 3)
+(ert-deftest reference-explorer-ui-quick-list-scrolls-only-at-visible-edge ()
+  (let ((reference-explorer-ui-quick-max-candidates 3)
         (session
-         (reference-explorer-source-lookup--make-quick-session
+         (reference-explorer-ui--make-quick-session
           :entries '(zero one two three four five)
           :index 0)))
-    (should (equal (reference-explorer-source-lookup--quick-visible-entries session)
+    (should (equal (reference-explorer-ui--quick-visible-entries session)
                    '(zero one two)))
-    (should (= (reference-explorer-source-lookup--quick-session-list-offset session) 0))
-    (setf (reference-explorer-source-lookup--quick-session-index session) 2)
-    (should (equal (reference-explorer-source-lookup--quick-visible-entries session)
+    (should (= (reference-explorer-ui--quick-session-list-offset session) 0))
+    (setf (reference-explorer-ui--quick-session-index session) 2)
+    (should (equal (reference-explorer-ui--quick-visible-entries session)
                    '(zero one two)))
-    (should (= (reference-explorer-source-lookup--quick-session-list-offset session) 0))
-    (setf (reference-explorer-source-lookup--quick-session-index session) 3)
-    (should (equal (reference-explorer-source-lookup--quick-visible-entries session)
+    (should (= (reference-explorer-ui--quick-session-list-offset session) 0))
+    (setf (reference-explorer-ui--quick-session-index session) 3)
+    (should (equal (reference-explorer-ui--quick-visible-entries session)
                    '(one two three)))
-    (should (= (reference-explorer-source-lookup--quick-session-list-offset session) 1))
-    (setf (reference-explorer-source-lookup--quick-session-index session) 5)
-    (should (equal (reference-explorer-source-lookup--quick-visible-entries session)
+    (should (= (reference-explorer-ui--quick-session-list-offset session) 1))
+    (setf (reference-explorer-ui--quick-session-index session) 5)
+    (should (equal (reference-explorer-ui--quick-visible-entries session)
                    '(three four five)))
-    (should (= (reference-explorer-source-lookup--quick-session-list-offset session) 3))))
+    (should (= (reference-explorer-ui--quick-session-list-offset session) 3))))
 
-(ert-deftest reference-explorer-source-lookup-quick-frame-deletion-deactivates-session ()
+(ert-deftest reference-explorer-ui-quick-frame-deletion-deactivates-session ()
   (let* ((session
-          (reference-explorer-source-lookup--make-quick-session
+          (reference-explorer-ui--make-quick-session
            :list-frame 'candidate-frame))
-         (reference-explorer-source-lookup--quick-session session)
+         (reference-explorer-ui--quick-session session)
          scheduled
          exited)
-    (setf (reference-explorer-source-lookup--quick-session-exit-function session)
+    (setf (reference-explorer-ui--quick-session-exit-function session)
           (lambda () (setq exited t)))
     (cl-letf (((symbol-function 'run-at-time)
                (lambda (_time _repeat function &rest arguments)
                  (setq scheduled (cons function arguments)))))
-      (reference-explorer-source-lookup--quick-list-frame-deleted 'candidate-frame))
-    (should-not (reference-explorer-source-lookup--quick-session-list-frame session))
+      (reference-explorer-ui--quick-list-frame-deleted 'candidate-frame))
+    (should-not (reference-explorer-ui--quick-session-list-frame session))
     (should scheduled)
     (apply (car scheduled) (cdr scheduled))
     (should exited)))
 
-(ert-deftest reference-explorer-source-lookup-quick-cleanup-releases-owned-resources ()
+(ert-deftest reference-explorer-ui-quick-cleanup-releases-owned-resources ()
   (let* ((buffer (generate-new-buffer " *environment-quick-cleanup*"))
-         (preview (reference-explorer-source-lookup--make-preview
+         (preview (reference-explorer-ui--make-preview
                    'preview-frame 'preview-buffer))
          (source-overlay (make-overlay (point-min) (point-min)))
          (session
-          (reference-explorer-source-lookup--make-quick-session
+          (reference-explorer-ui--make-quick-session
            :list-frame 'candidate-frame
            :list-buffer buffer
            :preview preview
            :source-overlay source-overlay))
-         (reference-explorer-source-lookup--quick-session session)
+         (reference-explorer-ui--quick-session session)
          deleted
          closed)
     (cl-letf (((symbol-function 'frame-live-p) (lambda (_frame) t))
               ((symbol-function 'delete-frame)
                (lambda (frame &optional _force) (push frame deleted)))
               ((symbol-function
-                'reference-explorer-source-lookup--close-temporary-preview)
+                'reference-explorer-ui--close-temporary-preview)
                (lambda (owned-preview) (setq closed owned-preview))))
-      (reference-explorer-source-lookup--quick-cleanup))
-    (should-not reference-explorer-source-lookup--quick-session)
+      (reference-explorer-ui--quick-cleanup))
+    (should-not reference-explorer-ui--quick-session)
     (should (equal deleted '(candidate-frame)))
     (should (eq closed preview))
     (should-not (overlay-buffer source-overlay))
     (should-not (buffer-live-p buffer))))
 
-(ert-deftest reference-explorer-source-lookup-quick-no-match-opens-selector ()
+(ert-deftest reference-explorer-ui-quick-no-match-opens-selector ()
   (let (session)
     (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
               ((symbol-function 'display-graphic-p) (lambda (&rest _) t))
               ((symbol-function
-                'reference-explorer-source-lookup--quick-query-candidates-at-point)
+                'reference-explorer-ui--quick-query-candidates-at-point)
                (lambda () '("missing-symbol")))
               ((symbol-function
                 'reference-explorer-source-lookup--quick-search-entries)
                (lambda (_query) nil))
               ((symbol-function
-                'reference-explorer-source-lookup--quick-show-list-frame)
+                'reference-explorer-ui--quick-show-list-frame)
                (lambda (owned-session)
                  (setq session owned-session)
                  t))
               ((symbol-function 'set-transient-map)
-               (lambda (&rest _arguments) #'reference-explorer-source-lookup--quick-cleanup))
-              ((symbol-function 'reference-explorer-source-lookup--quick-highlight-source)
+               (lambda (&rest _arguments) #'reference-explorer-ui--quick-cleanup))
+              ((symbol-function 'reference-explorer-ui--quick-highlight-source)
                #'ignore)
-              ((symbol-function 'reference-explorer-source-lookup--quick-schedule-preview)
+              ((symbol-function 'reference-explorer-ui--quick-schedule-preview)
                #'ignore)
-              ((symbol-function 'reference-explorer-source-lookup--quick-show-help)
+              ((symbol-function 'reference-explorer-ui--quick-show-help)
                #'ignore))
       (reference-explorer-source-lookup-quick-lookup-at-point))
     (unwind-protect
         (progn
-          (should (eq session reference-explorer-source-lookup--quick-session))
-          (should (equal (reference-explorer-source-lookup--quick-session-query session)
+          (should (eq session reference-explorer-ui--quick-session))
+          (should (equal (reference-explorer-ui--quick-session-query session)
                          "missing-symbol"))
-          (should-not (reference-explorer-source-lookup--quick-session-entries session)))
-      (reference-explorer-source-lookup--quick-cleanup))))
+          (should-not (reference-explorer-ui--quick-session-entries session)))
+      (reference-explorer-ui--quick-cleanup))))
 
-(ert-deftest reference-explorer-source-lookup-quick-empty-context-reports-without-search ()
+(ert-deftest reference-explorer-ui-quick-empty-context-reports-without-search ()
   (let (reported searched)
     (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
               ((symbol-function
-                'reference-explorer-source-lookup--quick-query-candidates-at-point)
+                'reference-explorer-ui--quick-query-candidates-at-point)
                (lambda () nil))
               ((symbol-function
                 'reference-explorer-source-lookup--quick-search-entries)
@@ -360,12 +362,12 @@
     (should-not searched)
     (should (string-match-p "no searchable text" reported))))
 
-(ert-deftest reference-explorer-source-lookup-quick-terminal-uses-consult-fallback ()
+(ert-deftest reference-explorer-ui-quick-terminal-uses-consult-fallback ()
   (let (called)
     (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
               ((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
               ((symbol-function
-                'reference-explorer-source-lookup--quick-query-candidates-at-point)
+                'reference-explorer-ui--quick-query-candidates-at-point)
                (lambda () '("query")))
               ((symbol-function
                 'reference-explorer-source-lookup--quick-search-entries)
@@ -375,123 +377,127 @@
                  (setq called (list query mode queries)))))
       (reference-explorer-source-lookup-quick-lookup-at-point))
     (should (equal called '("query" literal ("query"))))
-    (should-not reference-explorer-source-lookup--quick-session)))
+    (should-not reference-explorer-ui--quick-session)))
 
-(ert-deftest reference-explorer-source-lookup-quick-display-failure-cleans-session ()
+(ert-deftest reference-explorer-ui-quick-display-failure-cleans-session ()
   (let (reported)
     (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
               ((symbol-function 'display-graphic-p) (lambda (&rest _) t))
               ((symbol-function
-                'reference-explorer-source-lookup--quick-query-candidates-at-point)
+                'reference-explorer-ui--quick-query-candidates-at-point)
                (lambda () '("query")))
               ((symbol-function
                 'reference-explorer-source-lookup--quick-search-entries)
                (lambda (_query) '(entry)))
               ((symbol-function
-                'reference-explorer-source-lookup--quick-show-list-frame)
+                'reference-explorer-ui--quick-show-list-frame)
                (lambda (_session) nil))
               ((symbol-function 'message)
                (lambda (format-string &rest arguments)
                  (setq reported (apply #'format format-string arguments)))))
       (reference-explorer-source-lookup-quick-lookup-at-point))
-    (should-not reference-explorer-source-lookup--quick-session)
+    (should-not reference-explorer-ui--quick-session)
     (should (string-match-p "cannot display candidates" reported))))
 
-(ert-deftest reference-explorer-source-lookup-quick-consult-transfer-preserves-query ()
+(ert-deftest reference-explorer-ui-quick-consult-transfer-preserves-query ()
   (let* ((session
-          (reference-explorer-source-lookup--make-quick-session
+         (reference-explorer-ui--make-quick-session
            :query "query"
-           :query-options '(("long") ("query") ("short"))))
-         (reference-explorer-source-lookup--quick-session session)
+           :query-options '(("long") ("query") ("short"))
+           :consult-function
+           (lambda (_entries)
+             (reference-explorer-source-lookup--consult-loop
+              "query" 'literal '("long" "query" "short")))))
+         (reference-explorer-ui--quick-session session)
          transferred)
-    (setf (reference-explorer-source-lookup--quick-session-exit-function session)
-          #'reference-explorer-source-lookup--quick-cleanup)
+    (setf (reference-explorer-ui--quick-session-exit-function session)
+          #'reference-explorer-ui--quick-cleanup)
     (cl-letf (((symbol-function 'reference-explorer-source-lookup--consult-loop)
                (lambda (query mode &optional queries)
                  (setq transferred (list query mode queries)))))
-      (reference-explorer-source-lookup-quick-open-consult))
-    (should-not reference-explorer-source-lookup--quick-session)
+      (reference-explorer-ui-quick-open-consult))
+    (should-not reference-explorer-ui--quick-session)
     (should (equal transferred
                    '("query" literal ("long" "query" "short"))))))
 
-(ert-deftest reference-explorer-source-lookup-quick-display-commits-current-entry ()
+(ert-deftest reference-explorer-ui-quick-display-commits-current-entry ()
   (let* ((session
-          (reference-explorer-source-lookup--make-quick-session
+          (reference-explorer-ui--make-quick-session
            :entries '(first second)
            :index 1))
-         (reference-explorer-source-lookup--quick-session session)
+         (reference-explorer-ui--quick-session session)
          cancelled
          displayed)
-    (cl-letf (((symbol-function 'reference-explorer-source-lookup--quick-cancel-preview)
+    (cl-letf (((symbol-function 'reference-explorer-ui--quick-cancel-preview)
                (lambda (owned-session) (setq cancelled owned-session)))
-              ((symbol-function 'reference-explorer-source-lookup--display-entry)
+              ((symbol-function 'reference-explorer-ui--display-entry)
                (lambda (entry) (setq displayed entry))))
-      (reference-explorer-source-lookup-quick-display-entry))
+      (reference-explorer-ui-quick-display-entry))
     (should (eq cancelled session))
     (should (eq displayed 'second))))
 
-(ert-deftest reference-explorer-source-lookup-quick-display-targets-source-window ()
+(ert-deftest reference-explorer-ui-quick-display-targets-source-window ()
   (save-window-excursion
     (delete-other-windows)
     (let* ((original-window (selected-window))
            (source-window (split-window-right))
            (session
-            (reference-explorer-source-lookup--make-quick-session
+            (reference-explorer-ui--make-quick-session
              :entries '(entry)
              :index 0
              :source-window source-window))
-           (reference-explorer-source-lookup--quick-session session)
+           (reference-explorer-ui--quick-session session)
            displayed-in)
       (cl-letf (((symbol-function
-                  'reference-explorer-source-lookup--quick-cancel-preview)
+                  'reference-explorer-ui--quick-cancel-preview)
                  #'ignore)
-                ((symbol-function 'reference-explorer-source-lookup--display-entry)
+                ((symbol-function 'reference-explorer-ui--display-entry)
                  (lambda (_entry) (setq displayed-in (selected-window)))))
-        (reference-explorer-source-lookup-quick-display-entry))
+        (reference-explorer-ui-quick-display-entry))
       (should (eq displayed-in source-window))
       (should (eq (selected-window) original-window)))))
 
-(ert-deftest reference-explorer-source-lookup-quick-promotes-preview-before-cleanup ()
+(ert-deftest reference-explorer-ui-quick-promotes-preview-before-cleanup ()
   (let* (exited
          activated
          (preview
-          (reference-explorer-source-lookup--make-preview 'frame 'buffer 'entry))
+          (reference-explorer-ui--make-preview 'frame 'buffer 'entry))
          (session
-          (reference-explorer-source-lookup--make-quick-session
+          (reference-explorer-ui--make-quick-session
            :preview preview
            :entries '(entry)
            :index 0
            :source-window 'source-window
            :exit-function (lambda () (setq exited t))))
-         (reference-explorer-source-lookup--quick-session session)
-         (reference-explorer-source-lookup--active-temporary-preview preview))
+         (reference-explorer-ui--quick-session session)
+         (reference-explorer-ui--active-temporary-preview preview))
     (cl-letf (((symbol-function
-                'reference-explorer-source-lookup--activate-preview-interaction)
+                'reference-explorer-ui--activate-preview-interaction)
                (lambda (candidate origin-window)
                  (setq activated (cons candidate origin-window))))
               ((symbol-function
-                'reference-explorer-source-lookup--active-webkit-preview-xwidget)
+                'reference-explorer-ui--active-webkit-preview-xwidget)
                (lambda () 'preview-xwidget)))
-      (reference-explorer-source-lookup-quick-activate-preview))
+      (reference-explorer-ui-quick-activate-preview))
     (should exited)
-    (should-not (reference-explorer-source-lookup--quick-session-preview session))
+    (should-not (reference-explorer-ui--quick-session-preview session))
     (should (equal activated (cons preview 'source-window)))))
 
-(ert-deftest reference-explorer-source-lookup-promotes-shr-preview-to-selected-content ()
+(ert-deftest reference-explorer-ui-promotes-shr-preview-to-selected-content ()
   (let ((preview
-         (reference-explorer-source-lookup--make-preview nil nil 'lookup-entry))
+         (reference-explorer-ui--make-preview nil nil 'lookup-entry))
         displayed)
     (cl-letf (((symbol-function
-                'reference-explorer-source-lookup--display-entry-for-interaction)
+                'reference-explorer-ui--display-entry-for-interaction)
                (lambda (entry origin-window)
                  (setq displayed (cons entry origin-window)))))
-      (reference-explorer-source-lookup--activate-preview-interaction
+      (reference-explorer-ui--activate-preview-interaction
        preview 'source-window))
     (should (equal displayed '(lookup-entry . source-window)))))
 
-(ert-deftest reference-explorer-source-lookup-quick-list-position-stays-inside-frame ()
+(ert-deftest reference-explorer-ui-quick-list-position-stays-inside-frame ()
   (let ((session
-         (reference-explorer-source-lookup--make-quick-session
+         (reference-explorer-ui--make-quick-session
           :list-frame 'candidate
           :source-window 'source))
         positioned)
@@ -504,14 +510,14 @@
               ((symbol-function 'window-default-line-height)
                (lambda (_window) 20))
               ((symbol-function
-                'reference-explorer-source-lookup--quick-point-position)
+                'reference-explorer-ui--quick-point-position)
                (lambda (_window) '(900 700)))
               ((symbol-function 'set-frame-position)
                (lambda (_frame left top) (setq positioned (list left top)))))
-      (reference-explorer-source-lookup--quick-position-list-frame session))
+      (reference-explorer-ui--quick-position-list-frame session))
     (should (equal positioned '(696 496)))))
 
-(ert-deftest reference-explorer-source-lookup-registers-embark-actions-and-exporter ()
+(ert-deftest reference-explorer-ui-registers-embark-actions-and-exporter ()
   (unless (require 'embark nil t)
     (ert-skip "Embark is unavailable"))
   (should (eq (lookup-key reference-explorer-source-lookup-embark-map (kbd "RET"))
@@ -523,12 +529,12 @@
   (should
    (eq (alist-get 'reference-explorer-source-docset-result
                   embark-default-action-overrides)
-       #'reference-explorer-source-lookup-display-docset-candidate))
+       #'reference-explorer-ui-display-docset-candidate))
   (should
-   (eq (lookup-key reference-explorer-source-lookup-docset-embark-map (kbd "b"))
-       #'reference-explorer-source-lookup-browse-docset-candidate)))
+   (eq (lookup-key reference-explorer-ui-docset-embark-map (kbd "b"))
+       #'reference-explorer-ui-browse-docset-candidate)))
 
-(ert-deftest reference-explorer-source-lookup-docset-provider-opens-quick-selector ()
+(ert-deftest reference-explorer-ui-docset-provider-opens-quick-selector ()
   (with-temp-buffer
     (emacs-lisp-mode)
     (insert "sample")
@@ -546,15 +552,15 @@
                 ((symbol-function 'reference-explorer-source-docset-search)
                  (lambda (_query _mode) (list result)))
                 ((symbol-function 'display-graphic-p) (lambda (&rest _) t))
-                ((symbol-function 'reference-explorer-source-lookup--quick-open-session)
+                ((symbol-function 'reference-explorer-ui--quick-open-session)
                  (lambda (session) (setq opened session))))
-        (reference-explorer-source-lookup-docset-provider-display context))
-      (should (equal (reference-explorer-source-lookup--quick-session-query opened)
+        (reference-explorer-ui-docset-provider-display context))
+      (should (equal (reference-explorer-ui--quick-session-query opened)
                      "sample"))
-      (should (equal (reference-explorer-source-lookup--quick-session-entries opened)
+      (should (equal (reference-explorer-ui--quick-session-entries opened)
                      (list result))))))
 
-(ert-deftest reference-explorer-source-lookup-docset-provider-falls-through-when-absent ()
+(ert-deftest reference-explorer-ui-docset-provider-falls-through-when-absent ()
   (with-temp-buffer
     (let ((context (reference-explorer-context-create
                     :query "sample" :marker (copy-marker (point))
@@ -562,12 +568,12 @@
       (cl-letf (((symbol-function 'reference-explorer-source-docset-for-mode)
                  (lambda (_mode) nil)))
         (should-error
-         (reference-explorer-source-lookup-docset-provider-display context)
+         (reference-explorer-ui-docset-provider-display context)
          :type 'reference-explorer-provider-unavailable)))))
 
-(ert-deftest reference-explorer-source-lookup-explicit-quick-forwarding-bypasses-order ()
-  (let ((reference-explorer-source-lookup--quick-session
-         (reference-explorer-source-lookup--make-quick-session
+(ert-deftest reference-explorer-ui-explicit-quick-forwarding-bypasses-order ()
+  (let ((reference-explorer-ui--quick-session
+         (reference-explorer-ui--make-quick-session
           :query "query"
           :source-marker (copy-marker 1)
           :source-window (selected-window)))
@@ -577,14 +583,14 @@
                  (push (list provider
                              (reference-explorer-context-query context))
                        calls))))
-      (reference-explorer-source-lookup-quick-macos-dictionary)
-      (reference-explorer-source-lookup-quick-monokakido)
+      (reference-explorer-ui-quick-macos-dictionary)
+      (reference-explorer-ui-quick-monokakido)
       (should
        (equal (nreverse calls)
               '((macos-dictionary "query") (monokakido "query")))))))
 
-(ert-deftest reference-explorer-source-lookup-explicit-consult-forwarding-bypasses-order ()
-  (let ((reference-explorer-source-lookup--consult-origin
+(ert-deftest reference-explorer-ui-explicit-consult-forwarding-bypasses-order ()
+  (let ((reference-explorer-ui--consult-origin
          (reference-explorer-context-create
           :query nil
           :marker (copy-marker 1)
@@ -597,130 +603,130 @@
                  (push (list provider
                              (reference-explorer-context-query context))
                        calls))))
-      (reference-explorer-source-lookup-consult-macos-dictionary)
-      (reference-explorer-source-lookup-consult-monokakido)
+      (reference-explorer-ui-consult-macos-dictionary)
+      (reference-explorer-ui-consult-monokakido)
       (should
        (equal (nreverse calls)
               '((macos-dictionary "edited query")
                 (monokakido "edited query")))))))
 
-(ert-deftest reference-explorer-source-lookup-preview-is-temporary-until-commit ()
+(ert-deftest reference-explorer-ui-preview-is-temporary-until-commit ()
   (let (shown deleted)
     (cl-letf (((symbol-function
-                'reference-explorer-source-lookup--show-temporary-preview)
+                'reference-explorer-ui--show-temporary-preview)
                (lambda (entry)
                  (setq shown entry)
                  'temporary-frame))
               ((symbol-function
-                'reference-explorer-source-lookup--close-temporary-preview)
+                'reference-explorer-ui--close-temporary-preview)
                (lambda (popup)
                  (push popup deleted))))
-      (let ((state (reference-explorer-source-lookup--preview-state)))
+      (let ((state (reference-explorer-ui--preview-state)))
         (funcall state 'preview 'entry)
         (should (eq shown 'entry))
         (funcall state 'exit nil)
         (should (equal deleted '(temporary-frame)))))))
 
-(ert-deftest reference-explorer-source-lookup-consult-retains-promoted-preview ()
-  (let ((preview (reference-explorer-source-lookup--make-preview 'frame 'buffer))
-        (reference-explorer-source-lookup--preview-interaction-request nil)
+(ert-deftest reference-explorer-ui-consult-retains-promoted-preview ()
+  (let ((preview (reference-explorer-ui--make-preview 'frame 'buffer))
+        (reference-explorer-ui--preview-interaction-request nil)
         closed)
     (cl-letf (((symbol-function
-                'reference-explorer-source-lookup--show-temporary-preview)
+                'reference-explorer-ui--show-temporary-preview)
                (lambda (_entry) preview))
               ((symbol-function
-                'reference-explorer-source-lookup--close-temporary-preview)
+                'reference-explorer-ui--close-temporary-preview)
                (lambda (_preview) (setq closed t))))
-      (let ((state (reference-explorer-source-lookup--preview-state)))
+      (let ((state (reference-explorer-ui--preview-state)))
         (funcall state 'preview 'entry)
-        (setq reference-explorer-source-lookup--preview-interaction-request preview)
+        (setq reference-explorer-ui--preview-interaction-request preview)
         (funcall state 'exit nil)
         (should-not closed)
-        (should-not reference-explorer-source-lookup--preview-interaction-request)))))
+        (should-not reference-explorer-ui--preview-interaction-request)))))
 
-(ert-deftest reference-explorer-source-lookup-consult-promotes-shr-preview ()
+(ert-deftest reference-explorer-ui-consult-promotes-shr-preview ()
   (let* ((preview
-          (reference-explorer-source-lookup--make-preview nil nil 'lookup-entry))
-         (reference-explorer-source-lookup--active-temporary-preview preview)
-         (reference-explorer-source-lookup--preview-interaction-request nil)
-         (reference-explorer-source-lookup--consult-origin
+          (reference-explorer-ui--make-preview nil nil 'lookup-entry))
+         (reference-explorer-ui--active-temporary-preview preview)
+         (reference-explorer-ui--preview-interaction-request nil)
+         (reference-explorer-ui--consult-origin
           (reference-explorer-context-create :window 'source-window))
-         (tag (make-symbol "reference-explorer-source-lookup-test-control"))
-         (reference-explorer-source-lookup--consult-toggle-tag tag))
+         (tag (make-symbol "reference-explorer-ui-test-control"))
+         (reference-explorer-ui--consult-toggle-tag tag))
     (cl-letf (((symbol-function
-                'reference-explorer-source-lookup--active-webkit-preview-xwidget)
+                'reference-explorer-ui--active-webkit-preview-xwidget)
                (lambda () nil)))
       (should
        (equal (catch tag
-                (reference-explorer-source-lookup-consult-activate-preview))
+                (reference-explorer-ui-consult-activate-preview))
               (list 'interact preview 'source-window))))
-    (should-not reference-explorer-source-lookup--preview-interaction-request)))
+    (should-not reference-explorer-ui--preview-interaction-request)))
 
-(ert-deftest reference-explorer-source-lookup-consult-docset-promotes-preview ()
-  (let ((preview (reference-explorer-source-lookup--make-preview 'frame 'buffer))
+(ert-deftest reference-explorer-ui-consult-docset-promotes-preview ()
+  (let ((preview (reference-explorer-ui--make-preview 'frame 'buffer))
         activated)
-    (cl-letf (((symbol-function 'reference-explorer-source-lookup--consult-docset-read)
+    (cl-letf (((symbol-function 'reference-explorer-ui--consult-docset-read)
                (lambda (_query _mode)
                  (list 'interact preview 'origin-window)))
               ((symbol-function
-                'reference-explorer-source-lookup--activate-preview-interaction)
+                'reference-explorer-ui--activate-preview-interaction)
                (lambda (candidate origin-window)
                  (setq activated (cons candidate origin-window)))))
-      (reference-explorer-source-lookup-consult-docset
+      (reference-explorer-ui-consult-docset
        "require" 'ruby-ts-mode 'origin-window))
     (should (equal activated (cons preview 'origin-window)))))
 
-(ert-deftest reference-explorer-source-lookup-thesaurus-consult-promotes-preview ()
+(ert-deftest reference-explorer-ui-thesaurus-consult-promotes-preview ()
   (let* ((preview
-          (reference-explorer-source-lookup--make-preview nil nil 'lookup-entry))
-         (reference-explorer-source-lookup--active-temporary-preview preview)
+          (reference-explorer-ui--make-preview nil nil 'lookup-entry))
+         (reference-explorer-ui--active-temporary-preview preview)
          activated)
     (cl-letf (((symbol-function
-                'reference-explorer-source-lookup--thesaurus-consult-candidate)
+                'reference-explorer-ui--thesaurus-consult-candidate)
                (lambda (_target _id) "candidate"))
               ((symbol-function 'require)
                (lambda (&rest _arguments) t))
               ((symbol-function 'consult--read)
                (lambda (&rest _arguments)
-                 (reference-explorer-source-lookup-consult-activate-preview)))
+                 (reference-explorer-ui-consult-activate-preview)))
               ((symbol-function
-                'reference-explorer-source-lookup--active-webkit-preview-xwidget)
+                'reference-explorer-ui--active-webkit-preview-xwidget)
                (lambda () nil))
               ((symbol-function
-                'reference-explorer-source-lookup--activate-preview-interaction)
+                'reference-explorer-ui--activate-preview-interaction)
                (lambda (candidate origin-window)
                  (setq activated (cons candidate origin-window)))))
-      (reference-explorer-source-lookup--consult-thesaurus '(target) 'source-window))
+      (reference-explorer-ui--consult-thesaurus '(target) 'source-window))
     (should (equal activated (cons preview 'source-window)))))
 
-(ert-deftest reference-explorer-source-lookup-scrolls-the-active-preview ()
+(ert-deftest reference-explorer-ui-scrolls-the-active-preview ()
   (save-window-excursion
     (with-temp-buffer
       (dotimes (number 100)
         (insert (format "Preview line %d\n" number)))
       (switch-to-buffer (current-buffer))
       (goto-char (point-min))
-      (let ((reference-explorer-source-lookup--active-temporary-preview
-             (reference-explorer-source-lookup--make-preview
+      (let ((reference-explorer-ui--active-temporary-preview
+             (reference-explorer-ui--make-preview
               (selected-frame) (current-buffer))))
         (set-window-start (selected-window) (point-min))
-        (reference-explorer-source-lookup-preview-scroll-up)
+        (reference-explorer-ui-preview-scroll-up)
         (should (> (window-start) (point-min)))
-        (reference-explorer-source-lookup-preview-scroll-down)
+        (reference-explorer-ui-preview-scroll-down)
         (should (= (window-start) (point-min)))))))
 
-(ert-deftest reference-explorer-source-lookup-copies-webkit-preview-selection ()
+(ert-deftest reference-explorer-ui-copies-webkit-preview-selection ()
   (let* ((buffer (generate-new-buffer " *environment-webkit-copy*"))
          (preview
-          (reference-explorer-source-lookup--make-preview 'preview-frame buffer))
-         (reference-explorer-source-lookup--active-temporary-preview preview)
+          (reference-explorer-ui--make-preview 'preview-frame buffer))
+         (reference-explorer-ui--active-temporary-preview preview)
          copied-script
          copied-text)
     (unwind-protect
         (with-current-buffer buffer
           (setq-local major-mode 'xwidget-webkit-mode)
           (cl-letf (((symbol-function
-                      'reference-explorer-source-lookup--preview-live-p)
+                      'reference-explorer-ui--preview-live-p)
                      (lambda (_preview) t))
                     ((symbol-function 'get-buffer-xwidgets)
                      (lambda (_buffer) '(preview-xwidget)))
@@ -731,14 +737,14 @@
                     ((symbol-function 'kill-new)
                      (lambda (text &optional _replace)
                        (setq copied-text text))))
-            (reference-explorer-source-lookup-preview-copy-selection)
+            (reference-explorer-ui-preview-copy-selection)
             (should (equal copied-script
                            "window.getSelection().toString();"))
             (should (equal copied-text "selected documentation"))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
-(ert-deftest reference-explorer-source-lookup-closes-only-the-owned-preview-buffer ()
+(ert-deftest reference-explorer-ui-closes-only-the-owned-preview-buffer ()
   (let ((owned (generate-new-buffer " *environment-preview-owned*"))
         (other (generate-new-buffer " *environment-preview-other*"))
         preview
@@ -746,14 +752,14 @@
     (unwind-protect
         (progn
           (setq preview
-                (reference-explorer-source-lookup--make-preview
+                (reference-explorer-ui--make-preview
                  'preview-frame owned))
           (cl-letf (((symbol-function 'frame-live-p)
                      (lambda (_frame) t))
                     ((symbol-function 'delete-frame)
                      (lambda (frame &optional _force)
                        (setq deleted frame))))
-            (reference-explorer-source-lookup--close-temporary-preview preview))
+            (reference-explorer-ui--close-temporary-preview preview))
           (should (eq deleted 'preview-frame))
           (should-not (buffer-live-p owned))
           (should (buffer-live-p other)))
@@ -762,61 +768,61 @@
       (when (buffer-live-p other)
         (kill-buffer other)))))
 
-(ert-deftest reference-explorer-source-lookup-closes-frame-before-xwidget-view ()
+(ert-deftest reference-explorer-ui-closes-frame-before-xwidget-view ()
   (let ((buffer (generate-new-buffer " *environment-webkit-owned*"))
         (preview nil)
         events)
     (unwind-protect
         (progn
           (setq preview
-                (reference-explorer-source-lookup--make-preview 'preview-frame buffer))
+                (reference-explorer-ui--make-preview 'preview-frame buffer))
           (cl-letf (((symbol-function 'frame-live-p) (lambda (_frame) t))
                     ((symbol-function
-                      'reference-explorer-source-lookup--delete-xwidget-views)
+                      'reference-explorer-ui--delete-xwidget-views)
                      (lambda (owned-buffer)
                        (push (list 'view owned-buffer) events)))
                     ((symbol-function 'delete-frame)
                      (lambda (frame &optional _force)
                        (push (list 'frame frame) events))))
-            (reference-explorer-source-lookup--close-temporary-preview preview))
+            (reference-explorer-ui--close-temporary-preview preview))
           (should (equal (nreverse events)
                          `((frame preview-frame) (view ,buffer)))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
-(ert-deftest reference-explorer-source-lookup-closes-buffer-after-frame-is-gone ()
+(ert-deftest reference-explorer-ui-closes-buffer-after-frame-is-gone ()
   (let* ((buffer (generate-new-buffer " *environment-preview-orphan*"))
          (preview
-          (reference-explorer-source-lookup--make-preview 'deleted-frame buffer)))
+          (reference-explorer-ui--make-preview 'deleted-frame buffer)))
     (cl-letf (((symbol-function 'frame-live-p) (lambda (_frame) nil)))
-      (reference-explorer-source-lookup--close-temporary-preview preview))
+      (reference-explorer-ui--close-temporary-preview preview))
     (should-not (buffer-live-p buffer))))
 
-(ert-deftest reference-explorer-source-lookup-cleans-up-buffer-on-frame-deletion ()
+(ert-deftest reference-explorer-ui-cleans-up-buffer-on-frame-deletion ()
   (let ((buffer (generate-new-buffer " *environment-preview-deleted*"))
         scheduled)
     (cl-letf (((symbol-function 'frame-parameter)
                (lambda (_frame parameter)
                  (and (eq parameter
-                          'reference-explorer-source-lookup-preview-buffer)
+                          'reference-explorer-ui-preview-buffer)
                       buffer)))
               ((symbol-function 'run-at-time)
                (lambda (_time _repeat function &rest args)
                  (setq scheduled (cons function args))
                  'cleanup-timer))
-              ((symbol-function 'reference-explorer-source-lookup--delete-xwidget-views)
+              ((symbol-function 'reference-explorer-ui--delete-xwidget-views)
                #'ignore))
-      (reference-explorer-source-lookup--preview-frame-deleted 'preview-frame))
+      (reference-explorer-ui--preview-frame-deleted 'preview-frame))
     (should (buffer-live-p buffer))
     (should scheduled)
     (apply (car scheduled) (cdr scheduled))
     (should-not (buffer-live-p buffer))))
 
-(ert-deftest reference-explorer-source-lookup-hides-reusable-webkit-preview ()
+(ert-deftest reference-explorer-ui-hides-reusable-webkit-preview ()
   (let* ((buffer (generate-new-buffer " *environment-preview-webkit*"))
          (preview
-          (reference-explorer-source-lookup--make-preview 'preview-frame buffer))
-         (reference-explorer-source-lookup--docset-webkit-preview-caches
+          (reference-explorer-ui--make-preview 'preview-frame buffer))
+         (reference-explorer-ui--docset-webkit-preview-caches
           (make-hash-table :test #'eq))
          hidden)
     (unwind-protect
@@ -826,60 +832,60 @@
                   ((symbol-function 'make-frame-invisible)
                    (lambda (frame &optional _force)
                      (setq hidden frame))))
-          (reference-explorer-source-lookup--cache-docset-webkit-preview
+          (reference-explorer-ui--cache-docset-webkit-preview
            'parent-frame preview)
-          (reference-explorer-source-lookup--close-temporary-preview preview)
+          (reference-explorer-ui--close-temporary-preview preview)
           (should (eq hidden 'preview-frame))
           (should (buffer-live-p buffer))
           (should (eq
-                   (reference-explorer-source-lookup--docset-webkit-cache 'parent-frame)
+                   (reference-explorer-ui--docset-webkit-cache 'parent-frame)
                    preview)))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
-(ert-deftest reference-explorer-source-lookup-keeps-separate-webkit-cache-per-frame ()
-  (let ((reference-explorer-source-lookup--docset-webkit-preview-caches
+(ert-deftest reference-explorer-ui-keeps-separate-webkit-cache-per-frame ()
+  (let ((reference-explorer-ui--docset-webkit-preview-caches
          (make-hash-table :test #'eq))
-        (first (reference-explorer-source-lookup--make-preview 'child-a 'buffer-a))
-        (second (reference-explorer-source-lookup--make-preview 'child-b 'buffer-b)))
-    (reference-explorer-source-lookup--cache-docset-webkit-preview 'parent-a first)
-    (reference-explorer-source-lookup--cache-docset-webkit-preview 'parent-b second)
-    (should (eq (reference-explorer-source-lookup--docset-webkit-cache 'parent-a)
+        (first (reference-explorer-ui--make-preview 'child-a 'buffer-a))
+        (second (reference-explorer-ui--make-preview 'child-b 'buffer-b)))
+    (reference-explorer-ui--cache-docset-webkit-preview 'parent-a first)
+    (reference-explorer-ui--cache-docset-webkit-preview 'parent-b second)
+    (should (eq (reference-explorer-ui--docset-webkit-cache 'parent-a)
                 first))
-    (should (eq (reference-explorer-source-lookup--docset-webkit-cache 'parent-b)
+    (should (eq (reference-explorer-ui--docset-webkit-cache 'parent-b)
                 second))
     (should (= (hash-table-count
-                reference-explorer-source-lookup--docset-webkit-preview-caches)
+                reference-explorer-ui--docset-webkit-preview-caches)
                2))))
 
-(ert-deftest reference-explorer-source-lookup-uncaches-only-deleted-webkit-frame ()
-  (let ((reference-explorer-source-lookup--docset-webkit-preview-caches
+(ert-deftest reference-explorer-ui-uncaches-only-deleted-webkit-frame ()
+  (let ((reference-explorer-ui--docset-webkit-preview-caches
          (make-hash-table :test #'eq))
-        (first (reference-explorer-source-lookup--make-preview 'child-a 'buffer-a))
-        (second (reference-explorer-source-lookup--make-preview 'child-b 'buffer-b)))
-    (reference-explorer-source-lookup--cache-docset-webkit-preview 'parent-a first)
-    (reference-explorer-source-lookup--cache-docset-webkit-preview 'parent-b second)
+        (first (reference-explorer-ui--make-preview 'child-a 'buffer-a))
+        (second (reference-explorer-ui--make-preview 'child-b 'buffer-b)))
+    (reference-explorer-ui--cache-docset-webkit-preview 'parent-a first)
+    (reference-explorer-ui--cache-docset-webkit-preview 'parent-b second)
     (should (eq
-             (reference-explorer-source-lookup--uncache-docset-webkit-preview-frame
+             (reference-explorer-ui--uncache-docset-webkit-preview-frame
               'child-a)
              first))
-    (should-not (reference-explorer-source-lookup--docset-webkit-cache 'parent-a))
-    (should (eq (reference-explorer-source-lookup--docset-webkit-cache 'parent-b)
+    (should-not (reference-explorer-ui--docset-webkit-cache 'parent-a))
+    (should (eq (reference-explorer-ui--docset-webkit-cache 'parent-b)
                 second))))
 
-(ert-deftest reference-explorer-source-lookup-webkit-load-cleans-only-obsolete-html ()
+(ert-deftest reference-explorer-ui-webkit-load-cleans-only-obsolete-html ()
   (let ((current (make-temp-file "reference-explorer-source-docset-current-"))
         (obsolete (make-temp-file "reference-explorer-source-docset-obsolete-"))
         (buffer (generate-new-buffer " *environment-preview-webkit*")))
     (unwind-protect
         (with-current-buffer buffer
-          (setq reference-explorer-source-lookup--docset-preview-file current
-                reference-explorer-source-lookup--docset-preview-obsolete-files
+          (setq reference-explorer-ui--docset-preview-file current
+                reference-explorer-ui--docset-preview-obsolete-files
                 (list obsolete))
-          (reference-explorer-source-lookup--delete-obsolete-docset-preview-files)
+          (reference-explorer-ui--delete-obsolete-docset-preview-files)
           (should (file-exists-p current))
           (should-not (file-exists-p obsolete))
-          (should-not reference-explorer-source-lookup--docset-preview-obsolete-files))
+          (should-not reference-explorer-ui--docset-preview-obsolete-files))
       (when (buffer-live-p buffer)
         (kill-buffer buffer))
       (when (file-exists-p current)
@@ -887,14 +893,14 @@
       (when (file-exists-p obsolete)
         (delete-file obsolete)))))
 
-(ert-deftest reference-explorer-source-lookup-webkit-callback-cleans-after-load-changed ()
+(ert-deftest reference-explorer-ui-webkit-callback-cleans-after-load-changed ()
   (let ((obsolete (make-temp-file "reference-explorer-source-docset-obsolete-"))
         (buffer (generate-new-buffer " *environment-preview-webkit*")))
     (unwind-protect
         (progn
           (with-current-buffer buffer
             (setq-local xwidget-webkit--loading-p t
-                        reference-explorer-source-lookup--docset-preview-obsolete-files
+                        reference-explorer-ui--docset-preview-obsolete-files
                         (list obsolete)))
           (cl-letf (((symbol-function 'xwidget-buffer)
                      (lambda (_xwidget) buffer))
@@ -903,63 +909,63 @@
                        (with-current-buffer buffer
                          (rename-buffer "*xwidget-webkit: docs*" t)
                          (setq xwidget-webkit--loading-p nil)))))
-            (reference-explorer-source-lookup--docset-webkit-callback
+            (reference-explorer-ui--docset-webkit-callback
              'preview-xwidget 'load-changed))
           (should-not (file-exists-p obsolete))
           (with-current-buffer buffer
             (should (string-prefix-p " " (buffer-name)))
             (should (equal xwidget-webkit-buffer-name-format
-                           reference-explorer-source-lookup-preview-buffer-name))
+                           reference-explorer-ui-preview-buffer-name))
             (should-not
-             reference-explorer-source-lookup--docset-preview-obsolete-files)))
+             reference-explorer-ui--docset-preview-obsolete-files)))
       (when (buffer-live-p buffer)
         (kill-buffer buffer))
       (when (file-exists-p obsolete)
         (delete-file obsolete)))))
 
-(ert-deftest reference-explorer-source-lookup-finds-selected-vertico-row ()
+(ert-deftest reference-explorer-ui-finds-selected-vertico-row ()
   (let ((display (concat "\nfirst\n"
                          (propertize "second\n" 'face 'vertico-current)
                          "third\n")))
-    (should (= (reference-explorer-source-lookup--vertico-selected-row display) 2))))
+    (should (= (reference-explorer-ui--vertico-selected-row display) 2))))
 
-(ert-deftest reference-explorer-source-lookup-extracts-selected-vertico-line ()
+(ert-deftest reference-explorer-ui-extracts-selected-vertico-line ()
   (let* ((selected (propertize "second item\n" 'face 'vertico-current))
          (display (concat "\nfirst\n" selected "third\n")))
-    (should (equal (reference-explorer-source-lookup--vertico-selection display)
+    (should (equal (reference-explorer-ui--vertico-selection display)
                    '(2 "second item")))))
 
-(ert-deftest reference-explorer-source-lookup-preview-uses-horizontal-space-without-overlap ()
-  (let ((reference-explorer-source-lookup-preview-max-width 80))
+(ert-deftest reference-explorer-ui-preview-uses-horizontal-space-without-overlap ()
+  (let ((reference-explorer-ui-preview-max-width 80))
     (should
-     (equal (reference-explorer-source-lookup--preview-horizontal-layout
+     (equal (reference-explorer-ui--preview-horizontal-layout
              '(1200 80 20 900) 720 9)
             '(left . 720)))
-    (should (= (reference-explorer-source-lookup--preview-left
+    (should (= (reference-explorer-ui--preview-left
                 '(1200 80 20 900) 724 'left)
                172))
     (should
-     (equal (reference-explorer-source-lookup--preview-horizontal-layout
+     (equal (reference-explorer-ui--preview-horizontal-layout
              '(100 80 200 10) 720 9)
             '(right . 198)))
-    (should (= (reference-explorer-source-lookup--preview-left
+    (should (= (reference-explorer-ui--preview-left
                 '(100 80 200 10) 200 'right)
                100))))
 
-(ert-deftest reference-explorer-source-lookup-preview-requires-usable-horizontal-space ()
+(ert-deftest reference-explorer-ui-preview-requires-usable-horizontal-space ()
   (should-not
-   (reference-explorer-source-lookup--preview-horizontal-layout
+   (reference-explorer-ui--preview-horizontal-layout
     '(100 80 12 14) 720 180)))
 
-(ert-deftest reference-explorer-source-lookup-docset-preview-keeps-readable-width ()
+(ert-deftest reference-explorer-ui-docset-preview-keeps-readable-width ()
   (should
-   (= (reference-explorer-source-lookup--preview-content-width 120 900 10 640)
+   (= (reference-explorer-ui--preview-content-width 120 900 10 640)
       640))
   (should
-   (= (reference-explorer-source-lookup--preview-content-width 880 900 10 640)
+   (= (reference-explorer-ui--preview-content-width 880 900 10 640)
       900)))
 
-(ert-deftest reference-explorer-source-lookup-preview-cleans-up-after-display-failure ()
+(ert-deftest reference-explorer-ui-preview-cleans-up-after-display-failure ()
   (let ((original-window-live-p (symbol-function 'window-live-p))
         (display-buffer-alist '(("." display-buffer-same-window)))
         (display-buffer-overriding-action
@@ -976,12 +982,12 @@
               ((symbol-function 'window-frame)
                (lambda (_window) 'parent-frame))
               ((symbol-function 'frame-char-width) (lambda (_frame) 10))
-              ((symbol-function 'reference-explorer-source-lookup--render-entry)
+              ((symbol-function 'reference-explorer-ui--render-entry)
                (lambda (_entry _name)
                  (setq render-buffer
                        (generate-new-buffer
                         " *environment-preview-display-failure*"))))
-              ((symbol-function 'reference-explorer-source-lookup--prepare-preview-buffer)
+              ((symbol-function 'reference-explorer-ui--prepare-preview-buffer)
                (lambda (buffer &optional _query) buffer))
               ((symbol-function 'minibuffer-window)
                (lambda (_frame) 'minibuffer-window))
@@ -997,7 +1003,7 @@
               ((symbol-function 'set-frame-size)
                (lambda (&rest _) (cl-incf frame-resizes))))
       (should-not
-       (reference-explorer-source-lookup--show-temporary-preview-at-position
+       (reference-explorer-ui--show-temporary-preview-at-position
         'entry '(100 80 1000 10) 'anchor-window)))
     (should-not (buffer-live-p render-buffer))
     (should (equal display-rules '(nil nil)))
@@ -1005,8 +1011,8 @@
     (should (eq (alist-get 'allow-no-window (cdr display-action)) t))
     (should (= frame-resizes 0))))
 
-(ert-deftest reference-explorer-source-lookup-preview-measures-the-entire-buffer ()
-  (let ((buffer (generate-new-buffer " *reference-explorer-source-lookup-measure*"))
+(ert-deftest reference-explorer-ui-preview-measures-the-entire-buffer ()
+  (let ((buffer (generate-new-buffer " *reference-explorer-ui-measure*"))
         measured)
     (unwind-protect
         (progn
@@ -1018,15 +1024,15 @@
                        '(100 . 60))))
             (should
              (equal
-              (reference-explorer-source-lookup--preview-text-pixel-size
+              (reference-explorer-ui--preview-text-pixel-size
                'window buffer 800 300)
               '(100 . 60))))
           (should (equal measured '(1 19 800 300))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
-(ert-deftest reference-explorer-source-lookup-preview-measures-wrapped-height ()
-  (let ((buffer (generate-new-buffer " *reference-explorer-source-lookup-wrap*"))
+(ert-deftest reference-explorer-ui-preview-measures-wrapped-height ()
+  (let ((buffer (generate-new-buffer " *reference-explorer-ui-wrap*"))
         measured)
     (unwind-protect
         (progn
@@ -1037,78 +1043,78 @@
                        (setq measured (list from to x-limit y-limit))
                        '(200 . 72))))
             (should
-             (= (reference-explorer-source-lookup--preview-wrapped-height
+             (= (reference-explorer-ui--preview-wrapped-height
                  'window buffer 500)
                 72)))
           (should (equal measured '(1 23 nil 500))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
-(ert-deftest reference-explorer-source-lookup-preview-aligns-with-selected-candidate ()
-  (should (= (reference-explorer-source-lookup--preview-max-height 18 1080)
+(ert-deftest reference-explorer-ui-preview-aligns-with-selected-candidate ()
+  (should (= (reference-explorer-ui--preview-max-height 18 1080)
              1070))
-  (should (= (reference-explorer-source-lookup--preview-top
+  (should (= (reference-explorer-ui--preview-top
               '(0 100 0 0) 600 1080)
              99)))
 
-(ert-deftest reference-explorer-source-lookup-preview-shifts-up-only-at-bottom-edge ()
-  (should (= (reference-explorer-source-lookup--preview-top
+(ert-deftest reference-explorer-ui-preview-shifts-up-only-at-bottom-edge ()
+  (should (= (reference-explorer-ui--preview-top
               '(0 900 0 0) 600 1080)
              476))
-  (should (= (reference-explorer-source-lookup--preview-top
+  (should (= (reference-explorer-ui--preview-top
               '(0 1 0 0) 600 1080)
              4)))
 
-(ert-deftest reference-explorer-source-lookup-preview-reserves-horizontal-slack ()
-  (let ((reference-explorer-source-lookup-preview-width-slack 2))
-    (should (= (reference-explorer-source-lookup--preview-content-width 343 720 9)
+(ert-deftest reference-explorer-ui-preview-reserves-horizontal-slack ()
+  (let ((reference-explorer-ui-preview-width-slack 2))
+    (should (= (reference-explorer-ui--preview-content-width 343 720 9)
                361))
-    (should (= (reference-explorer-source-lookup--preview-content-width 715 720 9)
+    (should (= (reference-explorer-ui--preview-content-width 715 720 9)
                720))))
 
-(ert-deftest reference-explorer-source-lookup-preview-omits-navigation-and-shrinks-text ()
-  (let ((reference-explorer-source-lookup-content-font-family nil)
-        (buffer (generate-new-buffer " *reference-explorer-source-lookup-preview*")))
+(ert-deftest reference-explorer-ui-preview-omits-navigation-and-shrinks-text ()
+  (let ((reference-explorer-ui-content-font-family nil)
+        (buffer (generate-new-buffer " *reference-explorer-ui-preview*")))
     (unwind-protect
         (progn
           (with-current-buffer buffer
             (insert "heading\nbody\n\n(前項目⇒previous)\n(次項目⇒next)\n"
                     "(全項目⇒all)\n"))
-          (reference-explorer-source-lookup--prepare-preview-buffer buffer)
+          (reference-explorer-ui--prepare-preview-buffer buffer)
           (with-current-buffer buffer
             (should (equal (buffer-string) "heading\nbody"))
             (should word-wrap)
             (should
              (= (plist-get buffer-face-mode-face :height)
-                reference-explorer-source-lookup-preview-font-height))))
+                reference-explorer-ui-preview-font-height))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
-(ert-deftest reference-explorer-source-lookup-preview-highlights-active-query ()
-  (let ((reference-explorer-source-lookup-content-font-family nil)
-        (buffer (generate-new-buffer " *reference-explorer-source-lookup-highlight*")))
+(ert-deftest reference-explorer-ui-preview-highlights-active-query ()
+  (let ((reference-explorer-ui-content-font-family nil)
+        (buffer (generate-new-buffer " *reference-explorer-ui-highlight*")))
     (unwind-protect
         (progn
           (with-current-buffer buffer
             (insert "公爵夫人と公爵夫人"))
-          (reference-explorer-source-lookup--prepare-preview-buffer buffer "公爵夫人")
+          (reference-explorer-ui--prepare-preview-buffer buffer "公爵夫人")
           (with-current-buffer buffer
             (should (= (point) (point-min)))
             (goto-char (point-min))
             (should
-             (reference-explorer-source-lookup--face-includes-p
-              'reference-explorer-source-lookup-preview-match
+             (reference-explorer-ui--face-includes-p
+              'reference-explorer-ui-preview-match
               (get-text-property (point) 'face)))
             (search-forward "公爵夫人" nil t 2)
             (backward-char 1)
             (should
-             (reference-explorer-source-lookup--face-includes-p
-              'reference-explorer-source-lookup-preview-match
+             (reference-explorer-ui--face-includes-p
+              'reference-explorer-ui-preview-match
               (get-text-property (point) 'face)))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
-(ert-deftest reference-explorer-source-lookup-preview-highlighting-is-source-specific ()
+(ert-deftest reference-explorer-ui-preview-highlighting-is-source-specific ()
   (let ((reference-explorer-source-lookup-preview-highlight-sources '("encyclopedia")))
     (cl-letf (((symbol-function 'reference-explorer-source-lookup-entry-source)
                (lambda (entry)
@@ -1116,24 +1122,24 @@
                      "encyclopedia"
                    "dictionary"))))
       (should
-       (equal (reference-explorer-source-lookup--preview-query-for-entry
+       (equal (reference-explorer-ui--preview-query-for-entry
                'encyclopedia-entry "query")
               "query"))
       (should-not
-       (reference-explorer-source-lookup--preview-query-for-entry
+       (reference-explorer-ui--preview-query-for-entry
         'dictionary-entry "query")))))
 
-(ert-deftest reference-explorer-source-lookup-quick-candidate-removes-rich-heading-display ()
+(ert-deftest reference-explorer-ui-quick-candidate-removes-rich-heading-display ()
   (cl-letf (((symbol-function 'lookup-entry-heading)
              (lambda (_entry)
                (propertize "　heading　" 'display '(raise -0.3))))
             ((symbol-function 'reference-explorer-source-lookup-entry-source)
              (lambda (_entry) "dictionary")))
-    (let ((line (reference-explorer-source-lookup--quick-candidate-line 'entry nil)))
+    (let ((line (reference-explorer-ui--quick-candidate-line 'entry nil)))
       (should (equal line "heading  dictionary"))
       (should-not (get-text-property 0 'display line)))))
 
-(ert-deftest reference-explorer-source-lookup-applies-local-heading-filters ()
+(ert-deftest reference-explorer-ui-applies-local-heading-filters ()
   (let ((reference-explorer-source-lookup-heading-filter-functions
          (list (lambda (entry heading)
                  (should (eq entry 'entry))
@@ -1143,13 +1149,13 @@
       (should (equal (reference-explorer-source-lookup--plain-entry-heading 'entry)
                      "fixed-heading")))))
 
-(ert-deftest reference-explorer-source-lookup-keeps-ordinary-leading-underscore ()
+(ert-deftest reference-explorer-ui-keeps-ordinary-leading-underscore ()
   (cl-letf (((symbol-function 'lookup-entry-heading)
              (lambda (_entry) "_identifier")))
     (should (equal (reference-explorer-source-lookup--plain-entry-heading 'entry)
                    "_identifier"))))
 
-(ert-deftest reference-explorer-source-lookup-hides-consult-candidate-identity-suffix ()
+(ert-deftest reference-explorer-ui-hides-consult-candidate-identity-suffix ()
   (cl-letf (((symbol-function 'reference-explorer-source-lookup--search-entries)
              (lambda (_input _mode) '(entry)))
             ((symbol-function 'lookup-entry-heading)
@@ -1164,13 +1170,13 @@
       (should-not (get-text-property 0 'display candidate))
       (should (equal (get-text-property suffix 'display candidate) "")))))
 
-(ert-deftest reference-explorer-source-lookup-recovers-entry-from-propertized-candidate ()
+(ert-deftest reference-explorer-ui-recovers-entry-from-propertized-candidate ()
   (let ((candidate
          (concat "prefix "
                  (propertize "heading" 'consult--candidate 'entry))))
     (should (eq (reference-explorer-source-lookup-candidate-entry candidate) 'entry))))
 
-(ert-deftest reference-explorer-source-lookup-copies-complete-entry-description ()
+(ert-deftest reference-explorer-ui-copies-complete-entry-description ()
   (let ((candidate (propertize "heading" 'consult--candidate 'entry))
         copied)
     (cl-letf (((symbol-function 'reference-explorer-source-lookup-entry-description)
@@ -1182,7 +1188,7 @@
       (reference-explorer-source-lookup-copy-candidate candidate)
       (should (equal copied "heading — source\n\ndefinition")))))
 
-(ert-deftest reference-explorer-source-lookup-exports-actionable-result-buffer ()
+(ert-deftest reference-explorer-ui-exports-actionable-result-buffer ()
   (let ((first (propertize "first" 'consult--candidate 'first-entry))
         (second (propertize "second" 'consult--candidate 'second-entry))
         buffer)
@@ -1199,7 +1205,7 @@
     (unwind-protect
         (with-current-buffer buffer
           (should (derived-mode-p 'reference-explorer-source-lookup-export-mode))
-          (should (timerp reference-explorer-source-lookup--export-preview-timer))
+          (should (timerp reference-explorer-ui--export-preview-timer))
           (should (equal (buffer-string)
                          "first  source-a\nsecond  source-b\n"))
           (goto-char (point-min))
@@ -1213,7 +1219,7 @@
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
-(ert-deftest reference-explorer-source-lookup-export-preview-follows-frame-selection ()
+(ert-deftest reference-explorer-ui-export-preview-follows-frame-selection ()
   (with-temp-buffer
     (let ((selected 'other-frame)
           cancelled)
@@ -1240,7 +1246,7 @@
          'export-window)
         (should-not cancelled)))))
 
-(ert-deftest reference-explorer-source-lookup-ranks-match-class-before-source ()
+(ert-deftest reference-explorer-ui-ranks-match-class-before-source ()
   (let ((reference-explorer-source-lookup-source-order '("preferred" "secondary")))
     (cl-letf (((symbol-function
                 'reference-explorer-source-lookup--search-entries-with-method)
@@ -1262,7 +1268,7 @@
                 (preferred . partial)
                 (secondary . partial)))))))
 
-(ert-deftest reference-explorer-source-lookup-quick-search-uses-prefix-not-substring ()
+(ert-deftest reference-explorer-ui-quick-search-uses-prefix-not-substring ()
   (let (methods)
     (cl-letf (((symbol-function
                 'reference-explorer-source-lookup--search-entries-with-method)
@@ -1272,53 +1278,54 @@
       (reference-explorer-source-lookup--quick-search-entries "query")
       (should (equal (nreverse methods) '(exact prefix))))))
 
-(ert-deftest reference-explorer-source-lookup-quick-query-candidates-strictly-shrink ()
-  (let ((reference-explorer-source-lookup-word-candidates-function
+(ert-deftest reference-explorer-ui-quick-query-candidates-strictly-shrink ()
+  (let ((reference-explorer-ui-word-candidates-function
          (lambda ()
            '("公爵夫人" "公爵夫" "爵夫人" "公爵" "爵夫" "公"))))
-    (should (equal (reference-explorer-source-lookup--quick-query-candidates-at-point)
+    (should (equal (reference-explorer-ui--quick-query-candidates-at-point)
                    '("公爵夫人" "公爵夫" "公爵" "公")))))
 
-(ert-deftest reference-explorer-source-lookup-quick-query-options-keep-no-match ()
+(ert-deftest reference-explorer-ui-quick-query-options-keep-no-match ()
   (cl-letf (((symbol-function 'reference-explorer-source-lookup--quick-search-entries)
              (lambda (query)
                (pcase query
                  ("公爵夫人" '(long-entry))
                  ("公爵" '(short-entry))))))
     (should
-     (equal (reference-explorer-source-lookup--quick-query-options
-            '("公爵夫人" "公爵令嬢" "公爵"))
+     (equal (reference-explorer-ui--quick-query-options
+            '("公爵夫人" "公爵令嬢" "公爵")
+            #'reference-explorer-source-lookup--quick-search-entries)
             '(("公爵夫人" long-entry)
               ("公爵令嬢")
               ("公爵" short-entry))))))
 
-(ert-deftest reference-explorer-source-lookup-quick-query-can-shrink-and-expand ()
+(ert-deftest reference-explorer-ui-quick-query-can-shrink-and-expand ()
   (let* ((session
-          (reference-explorer-source-lookup--make-quick-session
+          (reference-explorer-ui--make-quick-session
            :query "公爵夫人"
            :query-options '(("公爵夫人" long-entry)
                             ("公爵" short-entry))
            :query-index 0
            :entries '(long-entry)
            :index 0))
-         (reference-explorer-source-lookup--quick-session session)
+         (reference-explorer-ui--quick-session session)
          refreshed)
-    (cl-letf (((symbol-function 'reference-explorer-source-lookup--quick-refresh)
+    (cl-letf (((symbol-function 'reference-explorer-ui--quick-refresh)
                (lambda (owned-session) (setq refreshed owned-session))))
-      (reference-explorer-source-lookup-quick-shorten-query)
-      (should (equal (reference-explorer-source-lookup--quick-session-query session)
+      (reference-explorer-ui-quick-shorten-query)
+      (should (equal (reference-explorer-ui--quick-session-query session)
                      "公爵"))
-      (should (equal (reference-explorer-source-lookup--quick-session-entries session)
+      (should (equal (reference-explorer-ui--quick-session-entries session)
                      '(short-entry)))
-      (should (= (reference-explorer-source-lookup--quick-session-query-index session) 1))
+      (should (= (reference-explorer-ui--quick-session-query-index session) 1))
       (should (eq refreshed session))
-      (reference-explorer-source-lookup-quick-expand-query)
-      (should (equal (reference-explorer-source-lookup--quick-session-query session)
+      (reference-explorer-ui-quick-expand-query)
+      (should (equal (reference-explorer-ui--quick-session-query session)
                      "公爵夫人"))
-      (should (equal (reference-explorer-source-lookup--quick-session-entries session)
+      (should (equal (reference-explorer-ui--quick-session-entries session)
                      '(long-entry))))))
 
-(ert-deftest reference-explorer-source-lookup-groups-partial-matches-by-source-order ()
+(ert-deftest reference-explorer-ui-groups-partial-matches-by-source-order ()
   (let ((reference-explorer-source-lookup-source-order '("preferred" "secondary")))
     (cl-letf (((symbol-function
                 'reference-explorer-source-lookup--search-entries-with-method)
@@ -1340,12 +1347,12 @@
                 (other . 1)
                 (other . 2)))))))
 
-(ert-deftest reference-explorer-source-lookup-does-not-mutate-lookup-result-lists ()
+(ert-deftest reference-explorer-ui-does-not-mutate-lookup-result-lists ()
   (let* ((reference-explorer-source-lookup--entry-cache (make-hash-table :test #'equal))
          (first-result (list 'first-entry))
          (second-result (list 'second-entry))
          (results `((first . ,first-result) (second . ,second-result))))
-    (cl-letf (((symbol-function 'reference-explorer-source-lookup--backend-query)
+    (cl-letf (((symbol-function 'reference-explorer-ui--backend-query)
                (lambda (_input _mode) "query"))
               ((symbol-function 'lookup-initialize) #'ignore)
               ((symbol-function 'lookup-default-module)
@@ -1370,18 +1377,18 @@
       (should (equal first-result '(first-entry)))
       (should (equal second-result '(second-entry))))))
 
-(ert-deftest reference-explorer-source-lookup-context-search-preserves-remembered-mode ()
-  (let ((reference-explorer-source-lookup-consult-mode 'converted))
+(ert-deftest reference-explorer-ui-context-search-preserves-remembered-mode ()
+  (let ((reference-explorer-ui-consult-mode 'converted))
     (cl-letf (((symbol-function 'reference-explorer-source-lookup--consult-read)
                (lambda (_initial _mode) '(return nil))))
       (reference-explorer-source-lookup--consult-loop "環境" 'literal))
-    (should (eq reference-explorer-source-lookup-consult-mode 'converted))))
+    (should (eq reference-explorer-ui-consult-mode 'converted))))
 
-(ert-deftest reference-explorer-source-lookup-consult-at-point-keeps-all-query-lengths ()
+(ert-deftest reference-explorer-ui-consult-at-point-keeps-all-query-lengths ()
   (let (called)
     (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
               ((symbol-function
-                'reference-explorer-source-lookup--quick-query-candidates-at-point)
+                'reference-explorer-ui--quick-query-candidates-at-point)
                (lambda () '("説明文全体" "説明文" "説明")))
               ((symbol-function 'reference-explorer-source-lookup--consult-loop)
                (lambda (initial mode &optional queries)
@@ -1391,7 +1398,7 @@
                    '("説明文全体" literal
                      ("説明文全体" "説明文" "説明"))))))
 
-(ert-deftest reference-explorer-source-lookup-thesaurus-replaces-captured-text ()
+(ert-deftest reference-explorer-ui-thesaurus-replaces-captured-text ()
   (with-temp-buffer
     (buffer-enable-undo)
     (insert "An Example remains")
@@ -1399,23 +1406,23 @@
     (let* ((beginning (copy-marker 4))
            (end (copy-marker 11 t))
            (candidate
-            (reference-explorer-source-lookup--make-thesaurus-candidate
+            (reference-explorer-ui--make-thesaurus-candidate
              :result (reference-explorer-source-thesaurus-result-create :term "sample")
              :buffer (current-buffer)
              :beginning beginning
              :end end
              :original "Example")))
-      (reference-explorer-source-lookup-thesaurus-replace candidate)
+      (reference-explorer-ui-thesaurus-replace candidate)
       (should (equal (buffer-string) "An Sample remains"))
       (undo-boundary)
       (undo)
       (should (equal (buffer-string) "An Example remains")))))
 
-(ert-deftest reference-explorer-source-lookup-thesaurus-refuses-stale-replacement ()
+(ert-deftest reference-explorer-ui-thesaurus-refuses-stale-replacement ()
   (with-temp-buffer
     (insert "example")
     (let ((candidate
-           (reference-explorer-source-lookup--make-thesaurus-candidate
+           (reference-explorer-ui--make-thesaurus-candidate
             :result (reference-explorer-source-thesaurus-result-create :term "sample")
             :buffer (current-buffer)
             :beginning (copy-marker 1)
@@ -1425,13 +1432,13 @@
       (delete-char 1)
       (insert "E")
       (should-error
-       (reference-explorer-source-lookup-thesaurus-replace candidate)
+       (reference-explorer-ui-thesaurus-replace candidate)
        :type 'user-error)
       (should (equal (buffer-string) "Example")))))
 
-(ert-deftest reference-explorer-source-lookup-thesaurus-preview-is-local-only ()
+(ert-deftest reference-explorer-ui-thesaurus-preview-is-local-only ()
   (let* ((candidate
-          (reference-explorer-source-lookup--make-thesaurus-candidate
+          (reference-explorer-ui--make-thesaurus-candidate
            :result (reference-explorer-source-thesaurus-result-create :term "sample")))
          searched)
     (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
@@ -1443,15 +1450,15 @@
               ((symbol-function 'reference-explorer-source-thesaurus-fetch)
                (lambda (&rest _)
                  (ert-fail "Preview performed an online search"))))
-      (should (eq (reference-explorer-source-lookup--candidate-preview-entry candidate)
+      (should (eq (reference-explorer-ui--candidate-preview-entry candidate)
                   'local-entry))
       (should (equal searched "sample")))))
 
-(ert-deftest reference-explorer-source-lookup-thesaurus-preview-honors-source-order ()
+(ert-deftest reference-explorer-ui-thesaurus-preview-honors-source-order ()
   (let* ((reference-explorer-source-lookup-thesaurus-preview-sources
           '("preferred" "fallback"))
          (candidate
-          (reference-explorer-source-lookup--make-thesaurus-candidate
+          (reference-explorer-ui--make-thesaurus-candidate
            :result (reference-explorer-source-thesaurus-result-create :term "sample"))))
     (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
               ((symbol-function
@@ -1464,13 +1471,13 @@
                    ('fallback-entry "fallback")
                    (_ "other")))))
       (should
-       (eq (reference-explorer-source-lookup--candidate-preview-entry candidate)
+       (eq (reference-explorer-ui--candidate-preview-entry candidate)
            'preferred-entry)))))
 
-(ert-deftest reference-explorer-source-lookup-thesaurus-preview-can-exclude-all-sources ()
+(ert-deftest reference-explorer-ui-thesaurus-preview-can-exclude-all-sources ()
   (let* ((reference-explorer-source-lookup-thesaurus-preview-sources '("unavailable"))
          (candidate
-          (reference-explorer-source-lookup--make-thesaurus-candidate
+          (reference-explorer-ui--make-thesaurus-candidate
            :result (reference-explorer-source-thesaurus-result-create :term "sample"))))
     (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
               ((symbol-function
@@ -1479,59 +1486,59 @@
               ((symbol-function 'reference-explorer-source-lookup-entry-source)
                (lambda (_entry) "other")))
       (should-not
-       (reference-explorer-source-lookup--candidate-preview-entry candidate)))))
+       (reference-explorer-ui--candidate-preview-entry candidate)))))
 
-(ert-deftest reference-explorer-source-lookup-thesaurus-list-shows-only-terms ()
+(ert-deftest reference-explorer-ui-thesaurus-list-shows-only-terms ()
   (let ((candidate
-         (reference-explorer-source-lookup--make-thesaurus-candidate
+         (reference-explorer-ui--make-thesaurus-candidate
           :result
           (reference-explorer-source-thesaurus-result-create
            :term "sample" :rating 91 :votes 12))))
-    (should (equal (reference-explorer-source-lookup--candidate-label candidate)
+    (should (equal (reference-explorer-ui--candidate-label candidate)
                    "sample"))
     (should (string-empty-p
-             (reference-explorer-source-lookup--candidate-annotation candidate)))
-    (should (equal (reference-explorer-source-lookup--quick-candidate-line
+             (reference-explorer-ui--candidate-annotation candidate)))
+    (should (equal (reference-explorer-ui--quick-candidate-line
                     candidate nil)
                    "sample"))))
 
-(ert-deftest reference-explorer-source-lookup-docset-kind-normalizes-common-plurals ()
-  (should (eq (reference-explorer-source-lookup--docset-kind-symbol "Methods") 'method))
-  (should (eq (reference-explorer-source-lookup--docset-kind-symbol "Attributes")
+(ert-deftest reference-explorer-ui-docset-kind-normalizes-common-plurals ()
+  (should (eq (reference-explorer-ui--docset-kind-symbol "Methods") 'method))
+  (should (eq (reference-explorer-ui--docset-kind-symbol "Attributes")
               'attribute))
-  (should (eq (reference-explorer-source-lookup--docset-kind-symbol "Classes") 'class))
-  (should (eq (reference-explorer-source-lookup--docset-kind-symbol "Properties")
+  (should (eq (reference-explorer-ui--docset-kind-symbol "Classes") 'class))
+  (should (eq (reference-explorer-ui--docset-kind-symbol "Properties")
               'property))
-  (should (eq (reference-explorer-source-lookup--docset-corfu-kind "Attributes")
+  (should (eq (reference-explorer-ui--docset-corfu-kind "Attributes")
               'field))
-  (should (eq (reference-explorer-source-lookup--docset-corfu-kind "Guide") 'text))
-  (should (eq (reference-explorer-source-lookup--docset-corfu-kind "Protocol")
+  (should (eq (reference-explorer-ui--docset-corfu-kind "Guide") 'text))
+  (should (eq (reference-explorer-ui--docset-corfu-kind "Protocol")
               'interface)))
 
-(ert-deftest reference-explorer-source-lookup-docset-kind-has-text-fallback ()
+(ert-deftest reference-explorer-ui-docset-kind-has-text-fallback ()
   (should (equal (substring-no-properties
-                  (reference-explorer-source-lookup--docset-kind-fallback "Method"))
+                  (reference-explorer-ui--docset-kind-fallback "Method"))
                  "[Method] "))
   (should (equal (substring-no-properties
-                  (reference-explorer-source-lookup--docset-kind-fallback nil))
+                  (reference-explorer-ui--docset-kind-fallback nil))
                  "[Reference] ")))
 
-(ert-deftest reference-explorer-source-lookup-single-docset-list-hides-source-version ()
+(ert-deftest reference-explorer-ui-single-docset-list-hides-source-version ()
   (let* ((docset (reference-explorer-source-docset-create
                   :name "Ruby-4.0.6" :feed "Ruby" :version "4.0.6"))
          (result (reference-explorer-source-docset-result-create
                   :name "Kernel.require" :type "Method" :docset docset)))
-    (cl-letf (((symbol-function 'reference-explorer-source-lookup--docset-kind-icon)
+    (cl-letf (((symbol-function 'reference-explorer-ui--docset-kind-icon)
                (lambda (_type) "I ")))
-      (should (equal (reference-explorer-source-lookup--candidate-annotation result)
+      (should (equal (reference-explorer-ui--candidate-annotation result)
                      "I "))
-      (should (equal (reference-explorer-source-lookup--quick-candidate-line result nil)
+      (should (equal (reference-explorer-ui--quick-candidate-line result nil)
                      "I Kernel.require"))
       (should (equal
-               (reference-explorer-source-lookup--quick-candidate-line result nil t)
+               (reference-explorer-ui--quick-candidate-line result nil t)
                "I Kernel.require  Ruby")))))
 
-(ert-deftest reference-explorer-source-lookup-thesaurus-starts-one-explicit-fetch ()
+(ert-deftest reference-explorer-ui-thesaurus-starts-one-explicit-fetch ()
   (with-temp-buffer
     (insert "replace example here")
     (goto-char 9)
@@ -1548,31 +1555,31 @@
                      (reference-explorer-source-thesaurus-result-create
                       :term "sample")))))
                 ((symbol-function
-                  'reference-explorer-source-lookup--thesaurus-show-targets)
+                  'reference-explorer-ui--thesaurus-show-targets)
                  (lambda (query targets _window _marker _bounds)
                    (setq shown (list query targets)))))
-        (reference-explorer-source-lookup-thesaurus-at-point))
+        (reference-explorer-ui-thesaurus-at-point))
       (should (equal fetches '(("example" synonyms))))
       (should (equal (car shown) "example"))
       (should
        (equal
-        (reference-explorer-source-lookup--thesaurus-candidate-original
+        (reference-explorer-ui--thesaurus-candidate-original
          (car (cadr shown)))
         "example")))))
 
-(ert-deftest reference-explorer-source-lookup-thesaurus-embark-default-is-replacement ()
+(ert-deftest reference-explorer-ui-thesaurus-embark-default-is-replacement ()
   (unless (require 'embark nil t)
     (ert-skip "Embark is unavailable"))
   (should
    (eq (alist-get 'reference-explorer-source-thesaurus-candidate
                   embark-default-action-overrides)
-       #'reference-explorer-source-lookup-thesaurus-replace))
+       #'reference-explorer-ui-thesaurus-replace))
   (should
-   (eq (lookup-key reference-explorer-source-lookup-thesaurus-embark-map (kbd "l"))
-       #'reference-explorer-source-lookup-thesaurus-lookup))
+   (eq (lookup-key reference-explorer-ui-thesaurus-embark-map (kbd "l"))
+       #'reference-explorer-ui-thesaurus-lookup))
   (should
-   (eq (lookup-key reference-explorer-source-lookup-thesaurus-embark-map (kbd "s"))
-       #'reference-explorer-source-lookup-thesaurus-search-candidate)))
+   (eq (lookup-key reference-explorer-ui-thesaurus-embark-map (kbd "s"))
+       #'reference-explorer-ui-thesaurus-search-candidate)))
 
-(provide 'reference-explorer-source-lookup-test)
-;;; reference-explorer-source-lookup-test.el ends here
+(provide 'reference-explorer-ui-test)
+;;; reference-explorer-ui-test.el ends here

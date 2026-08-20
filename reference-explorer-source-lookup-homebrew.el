@@ -4,7 +4,7 @@
 
 ;; Optional helper for a GNU Lookup installation supplied by Homebrew.  Load
 ;; and call `reference-explorer-source-lookup-homebrew-configure' before loading
-;; `reference-explorer-source-lookup'.  The core lookup UI does not call it.
+;; `reference-explorer-source-lookup'.  The Lookup source does not call it.
 
 ;;; Code:
 

@@ -45,11 +45,14 @@ with Lookup's `:stemmer` dictionary option.
 
 `reference-explorer.el` owns query context, provider registration, ordered
 dispatch, and fallback. `reference-explorer-provider-macos.el` and
-`reference-explorer-provider-monokakido.el` register reference providers with that
-dispatcher. `reference-explorer-source-lookup.el` is the GNU Lookup-facing selection
-and presentation layer; it also presents docset and thesaurus results.
+`reference-explorer-provider-monokakido.el` register reference providers with
+that dispatcher. `reference-explorer-ui.el` owns source-independent query
+selection, Quick and Consult sessions, child-frame previews, and interaction
+state. `reference-explorer-source-lookup.el` owns only the GNU Lookup search,
+ranking, entry rendering, Lookup commands, and provider registration. Docset
+retrieval and thesaurus retrieval remain in their respective source modules.
 
-Provider order is controlled by `reference-explorer-source-lookup-provider-order`.
+Provider order is controlled by `reference-explorer-ui-provider-order`.
 On macOS the default order is docset, system Dictionary, then GNU Lookup.
 Monokakido remains available explicitly unless it is added to that order. A
 provider falls through only when it signals that it is unavailable; an empty
@@ -77,7 +80,7 @@ child frame. Sources listed in
 `reference-explorer-source-lookup-preview-highlight-sources` highlight literal query
 occurrences. Preview is suppressed when neither side of the selected row has
 the configured usable width. A committed result is passed to
-`reference-explorer-source-lookup-display-buffer-function`, allowing a host to use
+`reference-explorer-ui-display-buffer-function`, allowing a host to use
 ordinary `display-buffer`, Popper, or another display policy.
 
 Lookup entries have Embark actions for display and copying their complete
@@ -134,7 +137,7 @@ scripts/manage-docsets.sh update MANIFEST
 
 ## Thesaurus
 
-`reference-explorer-source-lookup-thesaurus-at-point` retrieves synonyms for the
+`reference-explorer-ui-thesaurus-at-point` retrieves synonyms for the
 active region or contextual phrase. Candidate movement previews definitions
 through local GNU Lookup and performs no additional online request. Configure
 `reference-explorer-source-lookup-thesaurus-preview-sources` with displayed Lookup
@@ -163,22 +166,22 @@ changing the reference UI. Each backend receives the visible position and an
 optional visible-region restriction and returns candidate buffer bounds from
 most useful to least useful.
 
-Converted lookup mode applies `reference-explorer-source-lookup-query-conversion-function`
+Converted lookup mode applies `reference-explorer-ui-query-conversion-function`
 to minibuffer input; its default converts romanized Japanese to hiragana with
 Emacs's built-in Quail rules. The host environment supplies the matching
-completion behavior through `reference-explorer-source-lookup-converted-completion-style`.
+completion behavior through `reference-explorer-ui-converted-completion-style`.
 The optional module below supplies one implementation backed by Migemo and
 Orderless.
 
-The optional `reference-explorer-source-lookup-migemo` module extends the lookup UI's
+The optional `reference-explorer-ui-migemo` module extends the shared UI's
 converted-input filtering. It is not a reference provider: unlike the macOS
-and Monokakido modules, it attaches to `reference-explorer-source-lookup`. It assumes
-the host has already configured and loaded Migemo and Orderless. Loading it
-defines `reference-explorer-source-lookup-migemo-orderless` and selects that as the
+and Monokakido modules, it attaches to `reference-explorer-ui`. It assumes the
+host has already configured and loaded Migemo and Orderless. Loading it
+defines `reference-explorer-ui-migemo-orderless` and selects that as the
 converted-mode completion style. Nothing loads this module automatically:
 
 ```elisp
-(require 'reference-explorer-source-lookup-migemo)
+(require 'reference-explorer-ui-migemo)
 ```
 
 ## Development

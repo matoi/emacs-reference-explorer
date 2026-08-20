@@ -1,6 +1,6 @@
 EMACS ?= emacs
 LISP_FILES := $(wildcard *.el)
-CHECK_LISP_FILES := $(filter-out reference-explorer-source-lookup-migemo.el,$(LISP_FILES))
+CHECK_LISP_FILES := $(filter-out reference-explorer-ui-migemo.el,$(LISP_FILES))
 TEST_FILES := $(wildcard test/*-test.el)
 
 .PHONY: test check
