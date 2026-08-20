@@ -7,7 +7,9 @@
 ;; bundled with Reference Explorer or Emacs.  It owns dictionary agents,
 ;; searches, entry objects, and entry rendering; this module adds Quick and
 ;; Consult selectors, child-frame previews, Embark actions, and integration
-;; with Reference Explorer providers.
+;; with Reference Explorer providers.  Its primary use here is searching
+;; locally installed EPWING and EBXA dictionary data through Lookup's `ndeb'
+;; agent and the external EBLook program.
 ;;
 ;; The tested distribution is Lookup 1.4+media, published from:
 ;;
