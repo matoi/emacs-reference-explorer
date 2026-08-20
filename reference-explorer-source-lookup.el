@@ -315,26 +315,34 @@ groups are ordered by `reference-explorer-source-lookup-source-order'."
     (user-error "Lookup entry data is unavailable")))
 
 (defun reference-explorer-source-lookup--quick-start
-    (queries source-window source-marker &optional source-bounds)
-  "Start quick Lookup for QUERIES from SOURCE-WINDOW and SOURCE-MARKER."
+    (queries source-window source-marker &optional source-bounds initial-query)
+  "Start quick Lookup for QUERIES from SOURCE-WINDOW and SOURCE-MARKER.
+SOURCE-BOUNDS delimit an explicit region.  When INITIAL-QUERY is a member of
+QUERIES, begin at that query while retaining the full expand/shrink sequence."
   (unless (fboundp 'lookup-initialize)
     (user-error "Lookup is unavailable"))
   (let* ((query-options
           (reference-explorer-ui--quick-query-options
            queries #'reference-explorer-source-lookup--quick-search-entries))
-         (query (or (caar query-options) (car queries))))
+         (query-index
+          (or (and initial-query
+                   (cl-position initial-query query-options
+                                :key #'car :test #'equal))
+              0))
+         (query-option (nth query-index query-options))
+         (query (or (car query-option) (car queries))))
     (cond
      ((not (and query (not (string-empty-p (string-trim query)))))
       (message "Quick Lookup: no searchable text at point"))
      ((not (display-graphic-p))
       (reference-explorer-source-lookup--consult-loop query 'literal queries))
      (t
-      (let ((entries (cdar query-options)))
+      (let ((entries (cdr query-option)))
         (reference-explorer-ui--quick-open-session
          (reference-explorer-ui--make-quick-session
           :query query
           :query-options query-options
-          :query-index 0
+          :query-index query-index
           :entries entries
           :index 0
           :source-window source-window
@@ -368,7 +376,10 @@ requested."
        (reference-explorer-ui--quick-query-candidates-at-point))
      (selected-window)
      (copy-marker (if region-active begin (point)))
-     (and region-active (cons begin end)))))
+     (and region-active (cons begin end))
+     (if region-active
+         (buffer-substring-no-properties begin end)
+       (reference-explorer-ui-query-at-point)))))
 
 ;; Persistent Embark export
 
@@ -618,12 +629,16 @@ Contextual input always starts in literal mode."
                      (region-beginning) (region-end)))
             (reference-explorer-ui--quick-query-candidates-at-point)))
          (initial (car queries))
-        (reference-explorer-ui--consult-origin
+         (reference-explorer-ui--consult-origin
          (reference-explorer-context-create
           :query nil
           :marker (copy-marker (point))
           :window (selected-window))))
-    (reference-explorer-source-lookup--consult-loop initial 'literal queries)))
+    (reference-explorer-source-lookup--consult-loop
+     (if (use-region-p)
+         initial
+       (or (reference-explorer-ui-query-at-point) initial))
+     'literal queries)))
 
 (defun reference-explorer-source-lookup-provider-available-p ()
   "Return non-nil when Lookup is available."

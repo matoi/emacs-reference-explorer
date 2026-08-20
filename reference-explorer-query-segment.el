@@ -24,6 +24,15 @@ When it is unavailable, word recognition falls back to Emacs."
   :type 'string
   :group 'reference-explorer-query-segment)
 
+(defcustom reference-explorer-query-segment-mecab-initial-minimum-length 2
+  "Minimum character length of the preferred initial MeCab phrase.
+Among candidates at least this long, the shortest one is preferred for the
+initial query.  When no candidate reaches this length, the longest available
+candidate is used.  The complete candidate list remains ordered from longest
+to shortest so that consumers can expand and shrink the query."
+  :type 'natnum
+  :group 'reference-explorer-query-segment)
+
 (defcustom reference-explorer-query-segment-backends
   '(reference-explorer-query-segment-mecab-backend
     reference-explorer-query-segment-emacs-backend)
@@ -189,32 +198,69 @@ form compound candidates ordered from longest to shortest."
             (> (- (cdr left) (car left))
                (- (cdr right) (car right)))))))
 
-(defun reference-explorer-query-segment--run-backends
+(defun reference-explorer-query-segment--run-backends-with-owner
     (position region-start region-end)
-  "Return the first phrase bounds produced for POSITION."
-  (seq-some
-   (lambda (backend)
-     (funcall backend position region-start region-end))
-   reference-explorer-query-segment-backends))
+  "Return the backend and first phrase bounds produced for POSITION.
+The result is (BACKEND . BOUNDS), or nil when no backend handles the text."
+  (cl-loop for backend in reference-explorer-query-segment-backends
+           for bounds = (funcall backend position region-start region-end)
+           when bounds return (cons backend bounds)))
 
-(defun reference-explorer-query-segment-word-bound-candidates-at-point (&optional position)
-  "Return word-bound candidates containing POSITION or point.
-Candidates are ordered from longest to shortest.  Hidden Org-link syntax is
-mapped onto its visible description before candidates are collected."
+(defun reference-explorer-query-segment--bound-length (bounds)
+  "Return the character length of BOUNDS."
+  (- (cdr bounds) (car bounds)))
+
+(defun reference-explorer-query-segment--mecab-initial-bounds (candidates)
+  "Return the preferred initial bounds from MeCab CANDIDATES.
+Choose the shortest candidate meeting
+`reference-explorer-query-segment-mecab-initial-minimum-length'.  Preserve the
+first candidate when no candidate meets that minimum."
+  (let ((eligible
+         (seq-filter
+          (lambda (bounds)
+            (>= (reference-explorer-query-segment--bound-length bounds)
+                reference-explorer-query-segment-mecab-initial-minimum-length))
+          candidates)))
+    (if eligible
+        (seq-reduce
+         (lambda (preferred bounds)
+           (if (< (reference-explorer-query-segment--bound-length bounds)
+                  (reference-explorer-query-segment--bound-length preferred))
+               bounds
+             preferred))
+         (cdr eligible) (car eligible))
+      (car candidates))))
+
+(defun reference-explorer-query-segment--word-bound-result-at-point
+    (&optional position)
+  "Return the owning backend and word bounds at POSITION or point."
   (pcase-let* ((`(,visible-position ,visible-start ,visible-end)
                 (reference-explorer-query-segment--org-visible-context
                  (or position (point)))))
     (save-excursion
       (goto-char visible-position)
-      (reference-explorer-query-segment--run-backends
+      (reference-explorer-query-segment--run-backends-with-owner
        (point) visible-start visible-end))))
+
+(defun reference-explorer-query-segment-word-bound-candidates-at-point (&optional position)
+  "Return word-bound candidates containing POSITION or point.
+Candidates are ordered from longest to shortest.  Hidden Org-link syntax is
+mapped onto its visible description before candidates are collected."
+  (cdr (reference-explorer-query-segment--word-bound-result-at-point position)))
 
 (defun reference-explorer-query-segment-word-bounds-at-point (&optional position)
   "Return the bounds of the word at POSITION or point.
 Hidden Org-link syntax is first mapped onto the visible description.  Japanese
-words use MeCab segmentation when possible, then fall back to Emacs word
-semantics."
-  (car (reference-explorer-query-segment-word-bound-candidates-at-point position)))
+words use the shortest MeCab candidate meeting the configured initial minimum
+length, then fall back to Emacs word semantics."
+  (when-let* ((result
+               (reference-explorer-query-segment--word-bound-result-at-point
+                position))
+              (backend (car result))
+              (candidates (cdr result)))
+    (if (eq backend 'reference-explorer-query-segment-mecab-backend)
+        (reference-explorer-query-segment--mecab-initial-bounds candidates)
+      (car candidates))))
 
 (defun reference-explorer-query-segment-word-candidates-at-point (&optional position)
   "Return word candidates containing POSITION or point, longest first."

@@ -56,14 +56,40 @@
     (goto-char (point-min))
     (should (equal (reference-explorer-query-segment-word-at-point) "日本語"))))
 
-(ert-deftest reference-explorer-query-segment-prefers-longest-japanese-compound ()
-  (skip-unless (executable-find reference-explorer-query-segment-mecab-program))
+(ert-deftest reference-explorer-query-segment-prefers-shortest-two-character-mecab-phrase ()
   (with-temp-buffer
-    (insert "東京都庁")
+    (insert "公爵夫人")
     (goto-char 2)
-    (should (equal (reference-explorer-query-segment-word-at-point) "東京都庁"))
-    (should (member "東京"
-                    (reference-explorer-query-segment-word-candidates-at-point)))))
+    (let ((reference-explorer-query-segment-backends
+           '(reference-explorer-query-segment-mecab-backend)))
+      (cl-letf (((symbol-function
+                  'reference-explorer-query-segment-mecab-backend)
+                 (lambda (_position _start _end)
+                   '((1 . 5) (1 . 4) (1 . 3) (1 . 2)))))
+        (should (equal (reference-explorer-query-segment-word-at-point) "公爵"))
+        (should (equal (reference-explorer-query-segment-word-candidates-at-point)
+                       '("公爵夫人" "公爵夫" "公爵" "公")))))))
+
+(ert-deftest reference-explorer-query-segment-mecab-initial-phrase-falls-back-to-one-character ()
+  (with-temp-buffer
+    (insert "公")
+    (goto-char (point-min))
+    (let ((reference-explorer-query-segment-backends
+           '(reference-explorer-query-segment-mecab-backend)))
+      (cl-letf (((symbol-function
+                  'reference-explorer-query-segment-mecab-backend)
+                 (lambda (_position _start _end) '((1 . 2)))))
+        (should (equal (reference-explorer-query-segment-word-at-point) "公"))))))
+
+(ert-deftest reference-explorer-query-segment-keeps-other-backend-preference ()
+  (with-temp-buffer
+    (insert "公爵夫人")
+    (goto-char 2)
+    (let ((reference-explorer-query-segment-backends
+           (list (lambda (_position _start _end)
+                   '((1 . 5) (1 . 3))))))
+      (should (equal (reference-explorer-query-segment-word-at-point)
+                     "公爵夫人")))))
 
 (ert-deftest reference-explorer-query-segment-does-not-cross-japanese-particles ()
   (skip-unless (executable-find reference-explorer-query-segment-mecab-program))

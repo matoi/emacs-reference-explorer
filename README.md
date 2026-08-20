@@ -169,7 +169,12 @@ nouns; the Emacs backend provides the final ordinary word-boundary fallback.
 A language-specific backend can be inserted before the fallback without
 changing the reference UI. Each backend receives the visible position and an
 optional visible-region restriction and returns candidate buffer bounds from
-most useful to least useful.
+most useful to least useful. MeCab candidates remain longest-first for query
+expansion and shrinking, but the initial query is the shortest candidate of at
+least two characters. If there is no such candidate, the longest available
+candidate is used. Customize
+`reference-explorer-query-segment-mecab-initial-minimum-length` to change the
+minimum.
 
 Converted lookup mode applies `reference-explorer-ui-query-conversion-function`
 to minibuffer input; its default converts romanized Japanese to hiragana with

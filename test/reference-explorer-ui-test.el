@@ -1325,6 +1325,23 @@
       (should (equal (reference-explorer-ui--quick-session-entries session)
                      '(long-entry))))))
 
+(ert-deftest reference-explorer-ui-quick-lookup-starts-with-preferred-query ()
+  (let (session)
+    (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
+              ((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+              ((symbol-function
+                'reference-explorer-source-lookup--quick-search-entries)
+               (lambda (query) (list (intern query))))
+              ((symbol-function 'reference-explorer-ui--quick-open-session)
+               (lambda (owned-session) (setq session owned-session))))
+      (reference-explorer-source-lookup--quick-start
+       '("公爵夫人" "公爵" "公") nil nil nil "公爵")
+      (should (equal (reference-explorer-ui--quick-session-query session)
+                     "公爵"))
+      (should (= (reference-explorer-ui--quick-session-query-index session) 1))
+      (should (equal (reference-explorer-ui--quick-session-entries session)
+                     '(公爵))))))
+
 (ert-deftest reference-explorer-ui-groups-partial-matches-by-source-order ()
   (let ((reference-explorer-source-lookup-source-order '("preferred" "secondary")))
     (cl-letf (((symbol-function
