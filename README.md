@@ -168,8 +168,10 @@ with `EMACS_INCLUDE_DIR`, or the destination with
 
 ### Dictionaries by Monokakido
 
-The Monokakido provider opens the application's URL scheme. Optional settings
-are:
+[Dictionaries by Monokakido](https://www.monokakido.jp/ja/dictionaries/) is a
+dictionary application for macOS, iPhone, and iPad that manages and searches
+multiple dictionary titles. The provider opens its URL scheme. Optional
+settings are:
 
 - `reference-explorer-provider-monokakido-category`
 - `reference-explorer-provider-monokakido-scope`
