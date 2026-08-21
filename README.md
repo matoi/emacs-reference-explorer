@@ -123,9 +123,12 @@ Embark adds display, copy, and export actions when available.
 
 ### Docsets
 
-The local backend reads the format described in the [Dash Docset Generation
-Guide](https://kapeli.com/docsets), searches SQLite indexes, and renders entries
-with WebKit or SHR.
+[Dash](https://kapeli.com/dash) is a macOS application for browsing offline API
+documentation. It stores each documentation collection as a docset: a bundle
+of pages and a searchable index. Reference Explorer reads the format described
+in the [Dash Docset Generation Guide](https://kapeli.com/docsets), searches its
+SQLite indexes, and renders entries with WebKit or SHR. Dash itself is not
+required.
 
 Configure installed bundles and mode-specific selectors with:
 
