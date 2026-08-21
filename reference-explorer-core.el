@@ -109,6 +109,13 @@ ACTION receives a `reference-explorer-context'."
   (setf (alist-get name reference-explorer--providers)
         (list action available-p)))
 
+(defun reference-explorer-unregister-provider (name)
+  "Unregister provider NAME and return non-nil when it existed."
+  (when (assq name reference-explorer--providers)
+    (setq reference-explorer--providers
+          (assq-delete-all name reference-explorer--providers))
+    t))
+
 (defun reference-explorer-provider-names ()
   "Return registered reference provider names."
   (mapcar #'car reference-explorer--providers))

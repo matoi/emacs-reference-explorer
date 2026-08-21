@@ -12,6 +12,26 @@
                        '(docset macos-dictionary lookup)
                      '(lookup))))))
 
+(ert-deftest reference-explorer-ui-loads-bundled-source-implementations ()
+  (dolist (source '(lookup docset thesaurus))
+    (should (memq source (reference-explorer-source-names)))))
+
+(ert-deftest reference-explorer-ui-registers-source-backed-provider ()
+  (let ((reference-explorer--sources (copy-alist reference-explorer--sources))
+        (reference-explorer--providers (copy-alist reference-explorer--providers))
+        (reference-explorer-ui--source-provider-names
+         (copy-sequence reference-explorer-ui--source-provider-names)))
+    (reference-explorer-register-source
+     'example-source
+     :search (lambda (_query _context success _failure)
+               (funcall success '("result")))
+     :label #'identity
+     :render (lambda (_value _buffer-name) (current-buffer))
+     :provider t)
+    (should (memq 'example-source (reference-explorer-provider-names)))
+    (reference-explorer-unregister-source 'example-source)
+    (should-not (memq 'example-source (reference-explorer-provider-names)))))
+
 (ert-deftest reference-explorer-ui-converts-standard-roman-readings ()
   (should (equal (reference-explorer-ui--roman-to-hiragana "kankyo")
                  "かんきょ"))

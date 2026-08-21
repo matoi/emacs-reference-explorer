@@ -30,6 +30,7 @@
 
 (require 'cl-lib)
 (require 'reference-explorer-core)
+(require 'reference-explorer-source)
 (require 'reference-explorer-ui)
 (require 'seq)
 (require 'subr-x)
@@ -662,6 +663,16 @@ Contextual input always starts in literal mode."
    (reference-explorer-context-window context)
    (reference-explorer-context-marker context)))
 
+(defun reference-explorer-source-lookup-protocol-search
+    (query _context success _failure)
+  "Search Lookup for QUERY, then call SUCCESS."
+  (funcall success
+           (reference-explorer-source-lookup--quick-search-entries query)))
+
+(defun reference-explorer-source-lookup-protocol-annotation (entry _context)
+  "Return the dictionary name annotating Lookup ENTRY."
+  (reference-explorer-source-lookup-entry-source entry))
+
 (defun reference-explorer-source-lookup-lookup-content-appearance ()
   "Apply the shared appearance to a Lookup content buffer."
   (when (display-graphic-p)
@@ -676,10 +687,17 @@ Contextual input always starts in literal mode."
     (buffer-face-mode 1)))
 
 
-(reference-explorer-register-provider
+(reference-explorer-register-source
  'lookup
- #'reference-explorer-source-lookup-provider-display
- #'reference-explorer-source-lookup-provider-available-p)
+ :title "Lookup for Emacs"
+ :search #'reference-explorer-source-lookup-protocol-search
+ :label #'reference-explorer-source-lookup--plain-entry-heading
+ :annotation #'reference-explorer-source-lookup-protocol-annotation
+ :render #'reference-explorer-source-lookup-render-entry
+ :available-p (lambda (_context)
+                (reference-explorer-source-lookup-provider-available-p))
+ :provider t
+ :provider-function #'reference-explorer-source-lookup-provider-display)
 
 (with-eval-after-load 'embark
   (set-keymap-parent reference-explorer-source-lookup-embark-map

@@ -10,6 +10,7 @@
 
 (require 'cl-lib)
 (require 'reference-explorer-core)
+(require 'reference-explorer-source)
 (require 'reference-explorer-query-segment)
 (require 'reference-explorer-source-docset)
 (require 'reference-explorer-source-thesaurus)
@@ -317,6 +318,8 @@ The frame is clamped to the available height of its parent frame."
 (defvar reference-explorer-ui--consult-query-options nil)
 (defvar reference-explorer-ui--consult-query-index nil)
 (defvar reference-explorer-ui--quick-session nil)
+(defvar reference-explorer-ui--source-provider-names nil
+  "Sources currently exposed through automatically managed providers.")
 (defvar reference-explorer-ui--active-temporary-preview nil
   "Most recently displayed temporary reference preview.")
 (defvar reference-explorer-ui--preview-interaction nil
@@ -566,6 +569,8 @@ empty result lists."
 (defun reference-explorer-ui--candidate-label (candidate)
   "Return the visible label for reference CANDIDATE."
   (cond
+   ((reference-explorer-source-result-p candidate)
+    (reference-explorer-source-result-label candidate))
    ((reference-explorer-ui--thesaurus-candidate-p candidate)
     (reference-explorer-source-thesaurus-result-term
      (reference-explorer-ui--thesaurus-candidate-result candidate)))
@@ -617,6 +622,8 @@ Fall back to an explicit text label when `nerd-icons-corfu' is unavailable."
   "Return a compact annotation for reference CANDIDATE.
 SHOW-DOCSET-SOURCE keeps the source name when several docsets are searched."
   (cond
+   ((reference-explorer-source-result-p candidate)
+    (reference-explorer-source-result-annotation candidate))
    ((reference-explorer-ui--thesaurus-candidate-p candidate) "")
    ((reference-explorer-source-docset-result-p candidate)
     (let ((icon
@@ -631,7 +638,8 @@ SHOW-DOCSET-SOURCE keeps the source name when several docsets are searched."
 
 (defun reference-explorer-ui--candidate-preview-entry (candidate)
   "Return a local entry suitable for previewing CANDIDATE."
-  (if (or (reference-explorer-source-docset-result-p candidate)
+  (if (or (reference-explorer-source-result-p candidate)
+          (reference-explorer-source-docset-result-p candidate)
           (not (reference-explorer-ui--thesaurus-candidate-p candidate)))
       candidate
     ;; Candidate navigation must never contact Power Thesaurus.  Reuse the
@@ -654,7 +662,8 @@ SHOW-DOCSET-SOURCE keeps the source name when several docsets are searched."
 
 (defun reference-explorer-ui--preview-query-for-entry (entry query)
   "Return QUERY when ENTRY's source enables preview highlighting."
-  (and (not (reference-explorer-source-docset-result-p entry))
+  (and (not (reference-explorer-source-result-p entry))
+       (not (reference-explorer-source-docset-result-p entry))
        query
        (member (reference-explorer-source-lookup-entry-source entry)
                reference-explorer-source-lookup-preview-highlight-sources)
@@ -668,9 +677,12 @@ SHOW-DOCSET-SOURCE keeps the source name when several docsets are searched."
 
 (defun reference-explorer-ui--render-entry (entry buffer-name)
   "Render reference ENTRY in BUFFER-NAME and return that buffer."
-  (if (reference-explorer-source-docset-result-p entry)
-      (reference-explorer-source-docset-render entry buffer-name)
-    (reference-explorer-source-lookup-render-entry entry buffer-name)))
+  (cond
+   ((reference-explorer-source-result-p entry)
+    (reference-explorer-source-result-render entry buffer-name))
+   ((reference-explorer-source-docset-result-p entry)
+    (reference-explorer-source-docset-render entry buffer-name))
+   (t (reference-explorer-source-lookup-render-entry entry buffer-name))))
 
 (defun reference-explorer-ui--highlight-preview-query (query)
   "Highlight literal occurrences of QUERY in the current preview buffer."
@@ -755,12 +767,95 @@ Highlight literal QUERY occurrences when QUERY is non-nil."
   "Render reference ENTRY and display it as committed Popper content."
   (let ((buffer
          (reference-explorer-ui--render-entry
-          entry (if (reference-explorer-source-docset-result-p entry)
-                    reference-explorer-source-docset-content-buffer-name
-                  reference-explorer-source-lookup-content-buffer-name))))
+          entry
+          (cond
+           ((reference-explorer-source-result-p entry)
+            (format "*Reference %s*"
+                    (reference-explorer-source-result-source entry)))
+           ((reference-explorer-source-docset-result-p entry)
+            reference-explorer-source-docset-content-buffer-name)
+           (t reference-explorer-source-lookup-content-buffer-name)))))
     (save-selected-window
       (funcall reference-explorer-ui-display-buffer-function buffer))
     buffer))
+
+(defun reference-explorer-ui--read-source-result (source results context)
+  "Read one of SOURCE RESULTS with annotations for CONTEXT."
+  (let* ((candidates
+          (cl-loop
+           for result in results
+           for index from 1
+           for label = (reference-explorer-source-result-label result)
+           for annotation = (reference-explorer-source-result-annotation
+                             result context)
+           collect
+           (cons
+            (format "%s%s  [%d]" label
+                    (if (string-empty-p annotation)
+                        ""
+                      (format "  %s" annotation))
+                    index)
+            result)))
+         (selected
+          (completing-read
+           (format "%s: "
+                   (reference-explorer-source-title
+                    (reference-explorer-get-source source)))
+           candidates nil t)))
+    (cdr (assoc selected candidates))))
+
+(defun reference-explorer-ui-open-source (source context)
+  "Search registered SOURCE for CONTEXT and present its results."
+  (unless (reference-explorer-source-available-p source context)
+    (signal 'reference-explorer-provider-unavailable
+            (list (format "Source is unavailable: %s" source))))
+  (let ((query (reference-explorer-context-query context)))
+    (reference-explorer-source-search
+     source query context
+     (lambda (results)
+       (cond
+        ((null results)
+         (message "%s: no matches for “%s”" source query))
+        ((display-graphic-p)
+         (reference-explorer-ui--quick-open-session
+          (reference-explorer-ui--make-quick-session
+           :query query
+           :query-options (list (cons query results))
+           :query-index 0
+           :entries results
+           :index 0
+           :source-window (reference-explorer-context-window context)
+           :source-marker (reference-explorer-context-marker context)
+           :help "TAB:open  H-i:preview操作  H-q:quit")))
+        (t
+         (when-let ((result
+                     (reference-explorer-ui--read-source-result
+                      source results context)))
+           (reference-explorer-ui--display-entry result)))))
+     (lambda (message)
+       (message "%s: %s" source message)))))
+
+(defun reference-explorer-ui--register-source-provider (name)
+  "Register NAME's source-backed dispatcher provider when requested."
+  (let ((source (reference-explorer-get-source name)))
+    (if (reference-explorer-source-provider source)
+        (progn
+          (reference-explorer-register-provider
+           name
+           (or (reference-explorer-source-provider-function source)
+               (lambda (context)
+                 (reference-explorer-ui-open-source name context)))
+           (lambda ()
+             (reference-explorer-source-available-p name nil)))
+          (cl-pushnew name reference-explorer-ui--source-provider-names))
+      (reference-explorer-ui--unregister-source-provider name))))
+
+(defun reference-explorer-ui--unregister-source-provider (name)
+  "Unregister the dispatcher provider associated with source NAME."
+  (when (memq name reference-explorer-ui--source-provider-names)
+    (setq reference-explorer-ui--source-provider-names
+          (delq name reference-explorer-ui--source-provider-names))
+    (reference-explorer-unregister-provider name)))
 
 (defun reference-explorer-ui--face-includes-p (face value)
   "Return non-nil when face VALUE includes FACE."
@@ -2846,10 +2941,12 @@ ORIGIN-WINDOW receives focus after direct preview interaction ends."
              query mode source-window))
           :help "H-s/e:検索語を縮小/拡大  H-i:preview操作  M-m:Consult"))))))
 
-(reference-explorer-register-provider
- 'docset
- #'reference-explorer-ui-docset-provider-display
- #'reference-explorer-ui-docset-provider-available-p)
+(add-hook 'reference-explorer-source-registered-hook
+          #'reference-explorer-ui--register-source-provider)
+(add-hook 'reference-explorer-source-unregistered-hook
+          #'reference-explorer-ui--unregister-source-provider)
+(dolist (source (reference-explorer-source-names))
+  (reference-explorer-ui--register-source-provider source))
 
 
 

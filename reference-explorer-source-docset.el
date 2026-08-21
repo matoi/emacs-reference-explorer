@@ -18,6 +18,7 @@
 (require 'cl-lib)
 (require 'dom)
 (require 'json)
+(require 'reference-explorer-source)
 (require 'seq)
 (require 'shr)
 (require 'sqlite)
@@ -771,6 +772,45 @@ Append optional EXTRA-STYLE after the docset's own stylesheets."
             (user-error "Docset entry has no content: %s"
                         (reference-explorer-source-docset-result-name result))))
       buffer))))
+
+(defun reference-explorer-source-docset--context-mode (context)
+  "Return the originating major mode recorded in CONTEXT."
+  (when-let* ((marker (and context (reference-explorer-context-marker context)))
+              (buffer (and (markerp marker) (marker-buffer marker))))
+    (buffer-local-value 'major-mode buffer)))
+
+(defun reference-explorer-source-docset-protocol-search
+    (query context success _failure)
+  "Search docsets for QUERY and CONTEXT, then call SUCCESS."
+  (funcall success
+           (reference-explorer-source-docset-search
+            query (reference-explorer-source-docset--context-mode context))))
+
+(defun reference-explorer-source-docset-protocol-annotation (result _context)
+  "Return a plain annotation for docset RESULT."
+  (let ((feed
+         (reference-explorer-source-docset-feed
+          (reference-explorer-source-docset-result-docset result)))
+        (type (reference-explorer-source-docset-result-type result)))
+    (string-join (delq nil (list type feed)) "  ")))
+
+(defun reference-explorer-source-docset-protocol-available-p (context)
+  "Return non-nil when docsets can search CONTEXT."
+  (and (sqlite-available-p)
+       (or (null context)
+           (reference-explorer-source-docset-for-mode
+            (reference-explorer-source-docset--context-mode context)))))
+
+(reference-explorer-register-source
+ 'docset
+ :title "Dash docsets"
+ :search #'reference-explorer-source-docset-protocol-search
+ :label #'reference-explorer-source-docset-result-name
+ :annotation #'reference-explorer-source-docset-protocol-annotation
+ :render #'reference-explorer-source-docset-render
+ :available-p #'reference-explorer-source-docset-protocol-available-p
+ :provider t
+ :provider-function 'reference-explorer-ui-docset-provider-display)
 
 (provide 'reference-explorer-source-docset)
 ;;; reference-explorer-source-docset.el ends here

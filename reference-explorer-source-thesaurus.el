@@ -15,6 +15,7 @@
 
 (require 'cl-lib)
 (require 'json)
+(require 'reference-explorer-source)
 (require 'subr-x)
 (require 'url)
 
@@ -253,6 +254,32 @@ FAILURE defaults to reporting a user-facing message."
            (or failure
                (lambda (message)
                  (message "Thesaurus: %s" message)))))
+
+(defun reference-explorer-source-thesaurus-protocol-search
+    (query _context success failure)
+  "Search synonyms for QUERY, calling SUCCESS or FAILURE."
+  (reference-explorer-source-thesaurus-fetch
+   query 'synonyms success failure))
+
+(defun reference-explorer-source-thesaurus-protocol-render (result buffer-name)
+  "Render thesaurus RESULT in BUFFER-NAME and return its buffer."
+  (let ((buffer (get-buffer-create buffer-name)))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (reference-explorer-source-thesaurus-result-term result))
+        (when-let ((relations
+                    (reference-explorer-source-thesaurus-result-relations result)))
+          (insert "\n\n" (string-join relations ", ")))
+        (special-mode)))
+    buffer))
+
+(reference-explorer-register-source
+ 'thesaurus
+ :title "Power Thesaurus"
+ :search #'reference-explorer-source-thesaurus-protocol-search
+ :label #'reference-explorer-source-thesaurus-result-term
+ :render #'reference-explorer-source-thesaurus-protocol-render)
 
 (provide 'reference-explorer-source-thesaurus)
 ;;; reference-explorer-source-thesaurus.el ends here

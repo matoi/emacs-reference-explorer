@@ -6,9 +6,10 @@ Reference Explorer is a dictionary and documentation browser for Emacs. It
 integrates Lookup for Emacs, Dash-compatible docsets, macOS Dictionary,
 Dictionaries by Monokakido, and an online thesaurus.
 
-A source retrieves and renders entries; a provider is a target of the common
-reference dispatcher. Some integrations serve both roles. Configure provider
-chains with `reference-explorer-provider-rules`. The macOS default is `docset`,
+A source implements the common search, candidate, and rendering protocol; a
+provider is a target of the reference dispatcher. A source may expose itself
+as a provider through the shared UI. Configure provider chains with
+`reference-explorer-provider-rules`. The macOS default is `docset`,
 `macos-dictionary`, then `lookup`.
 
 ## Installation
@@ -36,6 +37,46 @@ Integrations with [Consult](https://github.com/minad/consult),
 - Dictionaries by Monokakido is the `monokakido` provider.
 - The thesaurus is a source used by its own replacement command, not a
   dispatcher provider.
+
+### Adding a source
+
+Register a source with `reference-explorer-register-source`. Search functions
+receive `QUERY`, `CONTEXT`, `SUCCESS`, and `FAILURE`; calling `SUCCESS` with raw
+entries lets Reference Explorer wrap them as source-owned results. Because the
+protocol uses callbacks, the same interface supports local and asynchronous
+network searches.
+
+```elisp
+(require 'reference-explorer-source)
+
+(defun my-glossary-search (query _context success _failure)
+  (funcall success (my-glossary-find query)))
+
+(defun my-glossary-render (entry buffer-name)
+  (let ((buffer (get-buffer-create buffer-name)))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (my-glossary-body entry))
+        (special-mode)))
+    buffer))
+
+(reference-explorer-register-source
+ 'my-glossary
+ :title "My glossary"
+ :search #'my-glossary-search
+ :label #'my-glossary-heading
+ :annotation (lambda (_entry _context) "local")
+ :render #'my-glossary-render
+ :available-p (lambda (_context) t)
+ :provider t)
+```
+
+With `:provider t`, the source is automatically usable in
+`reference-explorer-provider-rules` and gets the shared candidate and preview
+UI. Omit it for a source consumed by a specialized command, as the thesaurus
+is. `:provider-function` can replace only the provider presentation while the
+source still uses the common search and result protocol.
 
 ### Dispatch order and fallback
 
@@ -250,9 +291,11 @@ when both are already configured:
 
 ## Development
 
-`reference-explorer.el` is the package entry point, core dispatch lives in
-`reference-explorer-core.el`, shared interaction in `reference-explorer-ui.el`,
-and integrations in the role-named `source-*` and `provider-*` files.
+`reference-explorer.el` is the package entry point. Core dispatch lives in
+`reference-explorer-core.el`, the source protocol in
+`reference-explorer-source.el`, shared interaction in
+`reference-explorer-ui.el`, and integrations in the role-named `source-*` and
+`provider-*` files.
 
 Run the test suite with:
 
