@@ -65,8 +65,9 @@ fi
 
 module_suffix=$("$emacs_program" --batch -Q --eval '(princ module-file-suffix)')
 site_lisp_directory=${REFERENCE_EXPLORER_MODULE_DIRECTORY:-$HOME/.emacs.d/site-lisp/reference-explorer}
-module_file=$site_lisp_directory/reference-explorer-source-macos-module$module_suffix
-revision_file=$site_lisp_directory/reference-explorer-source-macos-module.revision
+module_file=${REFERENCE_EXPLORER_MODULE_FILE:-$site_lisp_directory/reference-explorer-source-macos-module$module_suffix}
+site_lisp_directory=$(/usr/bin/dirname -- "$module_file")
+revision_file=${module_file%"$module_suffix"}.revision
 fingerprint=$(
     {
         cksum "$source_file"
@@ -77,9 +78,10 @@ fingerprint=$(
 )
 
 module_loads() {
-    "$emacs_program" --batch -Q \
+    REFERENCE_EXPLORER_MODULE_FILE=$module_file \
+        "$emacs_program" --batch -Q \
         --eval "(progn
-                  (module-load \"$module_file\")
+                  (module-load (getenv \"REFERENCE_EXPLORER_MODULE_FILE\"))
 	                  (unless
 	                      (and
 	                       (fboundp 'reference-explorer-source-macos-show-definition)

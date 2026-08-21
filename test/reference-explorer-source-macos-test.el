@@ -10,6 +10,68 @@
             (if (boundp 'module-file-suffix) module-file-suffix ".dylib"))
     reference-explorer-source-macos-module-file)))
 
+(ert-deftest reference-explorer-source-macos-build-script-is-package-owned ()
+  (should
+   (equal
+    (expand-file-name "scripts/build-macos-module.sh"
+                      reference-explorer-source-macos--library-directory)
+    reference-explorer-source-macos-build-script)))
+
+(ert-deftest reference-explorer-source-macos-ensure-starts-package-build ()
+  (let ((reference-explorer-source-macos--build-process nil)
+        (reference-explorer-source-macos--build-checked-p nil)
+        (reference-explorer-source-macos--build-failure nil)
+        captured-command
+        captured-environment)
+    (cl-letf (((symbol-function 'reference-explorer-source-macos--supported-p)
+               (lambda () t))
+              ((symbol-function
+                'reference-explorer-source-macos--module-loaded-p)
+               (lambda () nil))
+              ((symbol-function 'process-live-p) (lambda (_process) nil))
+              ((symbol-function 'file-executable-p) (lambda (_file) t))
+              ((symbol-function 'reference-explorer-source-macos--emacs-program)
+               (lambda () "/Applications/Emacs.app/Contents/MacOS/Emacs"))
+              ((symbol-function 'make-process)
+               (lambda (&rest properties)
+                 (setq captured-command (plist-get properties :command)
+                       captured-environment (copy-sequence process-environment))
+                 'build-process)))
+      (should
+       (eq (reference-explorer-source-macos-ensure-module) 'build-process))
+      (should
+       (equal captured-command
+              (list reference-explorer-source-macos-build-script)))
+      (should
+       (member
+        "EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs"
+        captured-environment))
+      (should
+       (member
+        (concat "REFERENCE_EXPLORER_MODULE_FILE="
+                reference-explorer-source-macos-module-file)
+        captured-environment)))))
+
+(ert-deftest reference-explorer-source-macos-build-completion-loads-module ()
+  (let ((buffer (get-buffer-create
+                 reference-explorer-source-macos--build-buffer-name))
+        (reference-explorer-source-macos--build-process 'build-process)
+        (reference-explorer-source-macos--build-checked-p nil)
+        (reference-explorer-source-macos--build-failure "old failure"))
+    (with-current-buffer buffer
+      (erase-buffer)
+      (insert "ok: module is current\n"))
+    (cl-letf (((symbol-function 'process-status) (lambda (_process) 'exit))
+              ((symbol-function 'process-exit-status) (lambda (_process) 0))
+              ((symbol-function 'process-buffer) (lambda (_process) buffer))
+              ((symbol-function 'reference-explorer-source-macos--load-module)
+               (lambda () t)))
+      (reference-explorer-source-macos--build-finished 'build-process nil)
+      (should reference-explorer-source-macos--build-checked-p)
+      (should-not reference-explorer-source-macos--build-process)
+      (should-not reference-explorer-source-macos--build-failure)
+      (should-not (buffer-live-p buffer)))))
+
 (ert-deftest reference-explorer-source-macos-computes-screen-baseline ()
   (with-temp-buffer
     (save-window-excursion

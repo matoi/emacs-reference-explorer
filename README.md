@@ -213,16 +213,21 @@ scripts/manage-docsets.sh update MANIFEST
 ### macOS Dictionary
 
 The macOS source uses Dictionary Services for automatic phrase selection and
-an anchored system popup. Build its native module after installing or updating
-Emacs:
+an anchored system popup. On graphical macOS, loading Reference Explorer
+asynchronously builds or updates its native module when necessary. The check
+tracks the module source, Emacs version, architecture, and macOS SDK.
 
-```sh
-scripts/build-macos-module.sh
+Run the same check manually with:
+
+```elisp
+(reference-explorer-source-macos-install-module)
 ```
 
-The script uses `emacs` from `PATH`. Override it with `EMACS`, the header path
-with `EMACS_INCLUDE_DIR`, or the destination with
-`REFERENCE_EXPLORER_MODULE_DIRECTORY`.
+Set `reference-explorer-source-macos-auto-build` to nil for an externally
+managed module. Build failures remain in
+`*Reference Explorer macOS module build*`. The underlying script can also be
+run directly; it accepts `EMACS`, `EMACS_INCLUDE_DIR`, and
+`REFERENCE_EXPLORER_MODULE_DIRECTORY` overrides.
 
 ### Dictionaries by Monokakido
 
