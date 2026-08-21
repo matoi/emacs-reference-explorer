@@ -4,7 +4,7 @@
 
 ;; Send Reference Explorer queries to Dictionaries by Monokakido through its
 ;; documented URL scheme.  The application owns search and presentation; this
-;; provider deliberately does not participate in the default provider order.
+;; provider deliberately does not participate in the default provider chain.
 
 ;;; Code:
 

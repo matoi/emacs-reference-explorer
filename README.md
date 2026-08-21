@@ -8,8 +8,8 @@ Dictionaries by Monokakido, and an online thesaurus.
 
 A source retrieves and renders entries; a provider is a target of the common
 reference dispatcher. Some integrations serve both roles. Configure provider
-order with `reference-explorer-provider-order`. The macOS default is
-`docset`, `macos-dictionary`, then `lookup`.
+chains with `reference-explorer-provider-rules`. The macOS default is `docset`,
+`macos-dictionary`, then `lookup`.
 
 ## Installation
 
@@ -39,18 +39,17 @@ Integrations with [Consult](https://github.com/minad/consult),
 
 ### Dispatch order and fallback
 
-For one provider order in every major mode, set
-`reference-explorer-provider-order`:
+Each rule associates a major mode with an ordered provider chain. For one
+chain in every mode, set only the catch-all rule:
 
 ```elisp
-(customize-set-variable
- 'reference-explorer-provider-order
- '(docset macos-dictionary lookup))
+(setq reference-explorer-provider-rules
+      '((t . (docset macos-dictionary lookup))))
 ```
 
 `reference-explorer-at-point` tries providers from left to right. With a
-prefix argument it prompts for one provider instead. To use different chains
-by major mode, configure the core dispatcher rules:
+prefix argument it prompts for one provider instead. Put mode-specific rules
+before the catch-all rule:
 
 ```elisp
 (setq reference-explorer-provider-rules
@@ -59,10 +58,10 @@ by major mode, configure the core dispatcher rules:
         (t . (lookup))))
 ```
 
-The first rule whose mode is an ancestor of the originating major mode wins;
-if none matches, `reference-explorer-provider-order` is used. Keep a catch-all
-`t` rule last. By default, dispatch advances only when a provider
-is unavailable. To also continue after provider errors, use:
+The first rule whose mode is an ancestor of the originating major mode wins.
+If no rule matches, no provider is configured, so normally keep the `t` rule
+last. By default, dispatch advances only when a provider is unavailable. To
+also continue after provider errors, use:
 
 ```elisp
 (setq reference-explorer-fallback-conditions '(unavailable error))

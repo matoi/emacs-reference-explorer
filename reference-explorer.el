@@ -49,26 +49,17 @@ as the display anchor."
   :type 'function
   :group 'reference-explorer)
 
-(define-obsolete-variable-alias 'reference-explorer-ui-provider-order
-  'reference-explorer-provider-order "0.2.0")
-
-(defcustom reference-explorer-provider-order
+(defcustom reference-explorer-provider-rules
   (if (eq system-type 'darwin)
-      '(docset macos-dictionary lookup)
-    '(lookup))
-  "Default provider order used by `reference-explorer-at-point'.
-The macOS default tries a docset, the system Dictionary, then Lookup.  A
-provider not listed here remains available to explicit commands and actions."
-  :type '(repeat symbol)
-  :group 'reference-explorer)
-
-(defcustom reference-explorer-provider-rules nil
-  "Major-mode-specific overrides for `reference-explorer-provider-order'.
+      '((t . (docset macos-dictionary lookup)))
+    '((t . (lookup))))
+  "Ordered provider chains selected by major-mode ancestry.
 Each entry is (MODE . PROVIDERS).  MODE is t or a major mode accepted by
 `derived-mode-p'.  The first matching entry supplies the complete provider
-chain; when no entry matches, `reference-explorer-provider-order' is used.
-A provider later in a chain is tried only when an earlier provider is
-unavailable and `unavailable' is enabled in
+chain.  Put a catch-all t entry last to define the default chain.  The package
+default tries docset, macOS Dictionary, then Lookup on macOS, and Lookup on
+other systems.  A provider later in a chain is tried only when an earlier
+provider is unavailable and `unavailable' is enabled in
 `reference-explorer-fallback-conditions'."
   :type '(repeat
           (cons (choice (const :tag "Every mode" t) symbol)
@@ -138,13 +129,12 @@ ACTION receives a `reference-explorer-context'."
          (buffer (and (markerp marker) (marker-buffer marker))))
     (when buffer
       (with-current-buffer buffer
-        (let ((rule
-               (seq-find
-                (lambda (entry)
-                  (or (eq (car entry) t)
-                      (derived-mode-p (car entry))))
-                reference-explorer-provider-rules)))
-          (if rule (cdr rule) reference-explorer-provider-order))))))
+        (cdr
+         (seq-find
+          (lambda (entry)
+            (or (eq (car entry) t)
+                (derived-mode-p (car entry))))
+          reference-explorer-provider-rules))))))
 
 (defun reference-explorer-run-provider (name context)
   "Run provider NAME with reference CONTEXT without fallback."

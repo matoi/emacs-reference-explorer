@@ -63,26 +63,26 @@
       (should (equal (reference-explorer--providers-for-context context)
                      '(elisp-help))))))
 
-(ert-deftest reference-explorer-uses-default-order-without-matching-rule ()
-  (with-temp-buffer
-    (emacs-lisp-mode)
-    (let* ((context (reference-explorer-context-create
-                     :query "symbol" :marker (copy-marker (point))))
-           (reference-explorer-provider-order '(docset lookup))
-           (reference-explorer-provider-rules
-            '((text-mode . (dictionary)))))
-      (should (equal (reference-explorer--providers-for-context context)
-                     '(docset lookup))))))
-
 (ert-deftest reference-explorer-provider-rule-may-disable-a-mode ()
   (with-temp-buffer
     (emacs-lisp-mode)
     (let* ((context (reference-explorer-context-create
                      :query "symbol" :marker (copy-marker (point))))
-           (reference-explorer-provider-order '(lookup))
            (reference-explorer-provider-rules
-            '((emacs-lisp-mode))))
+            '((emacs-lisp-mode)
+              (t . (lookup)))))
       (should-not (reference-explorer--providers-for-context context)))))
+
+(ert-deftest reference-explorer-provider-rules-use-catch-all-default ()
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (let* ((context (reference-explorer-context-create
+                     :query "symbol" :marker (copy-marker (point))))
+           (reference-explorer-provider-rules
+            '((text-mode . (dictionary))
+              (t . (docset lookup)))))
+      (should (equal (reference-explorer--providers-for-context context)
+                     '(docset lookup))))))
 
 (ert-deftest reference-explorer-falls-back-only-when-unavailable ()
   (let ((reference-explorer--providers nil)

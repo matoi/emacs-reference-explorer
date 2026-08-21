@@ -4,9 +4,13 @@
 (require 'reference-explorer-source-lookup)
 
 (ert-deftest reference-explorer-ui-keeps-monokakido-explicit-by-default ()
-  (should (memq 'monokakido (reference-explorer-provider-names)))
-  (should-not (memq 'monokakido reference-explorer-provider-order))
-  (should (eq (car reference-explorer-provider-order) 'docset)))
+  (let ((default-chain (cdr (assq t reference-explorer-provider-rules))))
+    (should (memq 'monokakido (reference-explorer-provider-names)))
+    (should-not (memq 'monokakido default-chain))
+    (should (equal default-chain
+                   (if (eq system-type 'darwin)
+                       '(docset macos-dictionary lookup)
+                     '(lookup))))))
 
 (ert-deftest reference-explorer-ui-converts-standard-roman-readings ()
   (should (equal (reference-explorer-ui--roman-to-hiragana "kankyo")

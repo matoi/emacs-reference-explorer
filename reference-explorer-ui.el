@@ -2211,7 +2211,7 @@ Selection styling is applied by the renderer across the complete visual row."
       (reference-explorer-run-context context))))
 
 (defun reference-explorer-ui-quick-open-reference ()
-  "Open the active quick reference query with the configured provider order."
+  "Open the active quick reference query with the configured provider chain."
   (interactive)
   (reference-explorer-ui--quick-run-provider))
 
@@ -2651,7 +2651,7 @@ service."
         (reference-explorer-run-context context)))))
 
 (defun reference-explorer-ui-consult-open-reference ()
-  "Open the active Consult query with the configured provider order."
+  "Open the active Consult query with the configured provider chain."
   (interactive)
   (reference-explorer-ui--consult-run-provider))
 
