@@ -24,7 +24,8 @@
                (funcall complete
                         (reference-explorer-search-outcome-create
                          :status 'matched :entries '("result"))))
-     :label #'identity
+     :candidate (lambda (value _context)
+                  (reference-explorer-candidate-create :label value))
      :render (lambda (_value _buffer-name) (current-buffer)))
     (should (memq 'example-source (reference-explorer-source-names)))
     (reference-explorer-unregister-source 'example-source)
@@ -399,6 +400,11 @@
                 'reference-explorer-source-lookup--quick-search-entries)
                (lambda (_query) '(entry)))
               ((symbol-function
+                'reference-explorer-source-lookup-protocol-candidate)
+               (lambda (entry _context)
+                 (reference-explorer-candidate-create
+                  :label (symbol-name entry))))
+              ((symbol-function
                 'reference-explorer-ui--quick-show-list-frame)
                (lambda (_session) nil))
               ((symbol-function 'message)
@@ -444,6 +450,64 @@
       (reference-explorer-ui-quick-display-entry))
     (should (eq cancelled session))
     (should (eq displayed 'second))))
+
+(ert-deftest reference-explorer-ui-display-commit-reuses-quick-preview-buffer ()
+  (let* ((candidate
+          (reference-explorer-candidate-create
+           :source 'lookup :value 'entry :label "entry" :annotation ""))
+         (buffer (generate-new-buffer " *Reference Reused Preview*"))
+         (preview (reference-explorer-ui--make-preview nil buffer candidate))
+         (session (reference-explorer-ui--make-quick-session :preview preview))
+         (reference-explorer-ui--quick-session session)
+         displayed)
+    (unwind-protect
+        (let ((reference-explorer-ui-display-buffer-function
+               (lambda (value) (setq displayed value))))
+          (cl-letf (((symbol-function 'reference-explorer-ui--display-entry)
+                     (lambda (_entry)
+                       (ert-fail "Commit rendered an existing preview again"))))
+            (should (eq (reference-explorer-ui-commit-display candidate nil)
+                        buffer)))
+          (should (eq displayed buffer))
+          (should-not (reference-explorer-ui--quick-session-preview session)))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest reference-explorer-ui-quick-runs-source-commit-action ()
+  (let* ((reference-explorer--sources nil)
+         (context
+          (reference-explorer-context-create
+           :phrase "original" :query "query" :automatic t))
+         (session
+          (reference-explorer-ui--make-quick-session
+           :source 'action
+           :context context
+           :query "query"
+           :entries nil
+           :index 0))
+         received
+         quit)
+    (reference-explorer-register-source
+     'action
+     :search (lambda (_query _context _complete))
+     :candidate (lambda (value _context)
+                  (reference-explorer-candidate-create :label value))
+     :commit
+     (lambda (candidate received-context)
+       (setq received (list candidate received-context))))
+    (setf (reference-explorer-ui--quick-session-entries session)
+          (list (reference-explorer-source-make-candidate
+                 'action "candidate" context)))
+    (let ((reference-explorer-ui--quick-session session))
+      (cl-letf (((symbol-function 'reference-explorer-ui--quick-cancel-preview)
+                 #'ignore)
+                ((symbol-function 'reference-explorer-ui-quick-quit)
+                 (lambda () (setq quit t))))
+        (reference-explorer-ui-quick-display-entry)))
+    (should quit)
+    (should (eq (cadr received) context))
+    (should (equal (reference-explorer-candidate-value (car received))
+                   "candidate"))))
 
 (ert-deftest reference-explorer-ui-quick-display-targets-source-window ()
   (save-window-excursion
@@ -566,8 +630,10 @@
         (reference-explorer-ui-docset-present context))
       (should (equal (reference-explorer-ui--quick-session-query opened)
                      "sample"))
-      (should (equal (reference-explorer-ui--quick-session-entries opened)
-                     (list result))))))
+      (let ((candidate
+             (car (reference-explorer-ui--quick-session-entries opened))))
+        (should (reference-explorer-candidate-p candidate))
+        (should (eq (reference-explorer-candidate-value candidate) result))))))
 
 (ert-deftest reference-explorer-ui-docset-source-falls-through-when-absent ()
   (with-temp-buffer
@@ -685,28 +751,26 @@
        "require" 'ruby-ts-mode 'origin-window))
     (should (equal activated (cons preview 'origin-window)))))
 
-(ert-deftest reference-explorer-ui-thesaurus-consult-promotes-preview ()
-  (let* ((preview
-          (reference-explorer-ui--make-preview nil nil 'lookup-entry))
-         (reference-explorer-ui--active-temporary-preview preview)
-         activated)
+(ert-deftest reference-explorer-ui-thesaurus-consult-disables-preview ()
+  (let ((candidate
+         (reference-explorer-source-make-candidate
+          'thesaurus
+          (reference-explorer-source-thesaurus-result-create :term "sample")
+          nil))
+        arguments)
     (cl-letf (((symbol-function
                 'reference-explorer-ui--thesaurus-consult-candidate)
-               (lambda (_target _id) "candidate"))
+               (lambda (_value _context _id) "candidate"))
               ((symbol-function 'require)
                (lambda (&rest _arguments) t))
               ((symbol-function 'consult--read)
-               (lambda (&rest _arguments)
-                 (reference-explorer-ui-consult-activate-preview)))
-              ((symbol-function
-                'reference-explorer-ui--active-webkit-preview-xwidget)
-               (lambda () nil))
-              ((symbol-function
-                'reference-explorer-ui--activate-preview-interaction)
-               (lambda (candidate origin-window)
-                 (setq activated (cons candidate origin-window)))))
-      (reference-explorer-ui--consult-thesaurus '(target) 'source-window))
-    (should (equal activated (cons preview 'source-window)))))
+               (lambda (&rest values)
+                 (setq arguments values)
+                 nil)))
+      (reference-explorer-ui--consult-thesaurus
+       (list candidate) (reference-explorer-context-create)))
+    (should-not (plist-member (cdr arguments) :state))
+    (should-not (plist-member (cdr arguments) :preview-key))))
 
 (ert-deftest reference-explorer-ui-scrolls-the-active-preview ()
   (save-window-excursion
@@ -1176,6 +1240,9 @@
             ((symbol-function 'lookup-entry-heading)
              (lambda (_entry)
                (propertize "　heading　" 'display '(raise -0.3))))
+            ((symbol-function
+              'reference-explorer-source-lookup-entry-source)
+             (lambda (_entry) "dictionary"))
             ((symbol-function 'consult--tofu-append)
              (lambda (heading _id)
                (concat heading (propertize "x" 'invisible t)))))
@@ -1347,6 +1414,11 @@
               ((symbol-function
                 'reference-explorer-source-lookup--quick-search-entries)
                (lambda (query) (list (intern query))))
+              ((symbol-function
+                'reference-explorer-source-lookup-protocol-candidate)
+               (lambda (entry _context)
+                 (reference-explorer-candidate-create
+                  :label (symbol-name entry))))
               ((symbol-function 'reference-explorer-ui--quick-open-session)
                (lambda (owned-session) (setq session owned-session))))
       (reference-explorer-source-lookup--quick-start
@@ -1354,8 +1426,10 @@
       (should (equal (reference-explorer-ui--quick-session-query session)
                      "公爵"))
       (should (= (reference-explorer-ui--quick-session-query-index session) 1))
-      (should (equal (reference-explorer-ui--quick-session-entries session)
-                     '(公爵))))))
+      (let ((candidate
+             (car (reference-explorer-ui--quick-session-entries session))))
+        (should (reference-explorer-candidate-p candidate))
+        (should (eq (reference-explorer-candidate-value candidate) '公爵))))))
 
 (ert-deftest reference-explorer-ui-groups-partial-matches-by-source-order ()
   (let ((reference-explorer-source-lookup-source-order '("preferred" "secondary")))
@@ -1437,14 +1511,17 @@
     (undo-boundary)
     (let* ((beginning (copy-marker 4))
            (end (copy-marker 11 t))
+           (context
+            (reference-explorer-context-create
+             :selection-beginning beginning :selection-end end
+             :selection-text "Example"))
            (candidate
-            (reference-explorer-ui--make-thesaurus-candidate
-             :result (reference-explorer-source-thesaurus-result-create :term "sample")
-             :buffer (current-buffer)
-             :beginning beginning
-             :end end
-             :original "Example")))
-      (reference-explorer-ui-thesaurus-replace candidate)
+            (reference-explorer-source-make-candidate
+             'thesaurus
+             (reference-explorer-source-thesaurus-result-create :term "sample")
+             context))
+           (reference-explorer-ui--consult-origin context))
+      (reference-explorer-ui-thesaurus-accept candidate)
       (should (equal (buffer-string) "An Sample remains"))
       (undo-boundary)
       (undo)
@@ -1453,79 +1530,40 @@
 (ert-deftest reference-explorer-ui-thesaurus-refuses-stale-replacement ()
   (with-temp-buffer
     (insert "example")
-    (let ((candidate
-           (reference-explorer-ui--make-thesaurus-candidate
-            :result (reference-explorer-source-thesaurus-result-create :term "sample")
-            :buffer (current-buffer)
-            :beginning (copy-marker 1)
-            :end (copy-marker 8 t)
-            :original "example")))
+    (let* ((context
+            (reference-explorer-context-create
+             :selection-beginning (copy-marker 1)
+             :selection-end (copy-marker 8 t)
+             :selection-text "example"))
+           (candidate
+            (reference-explorer-source-make-candidate
+             'thesaurus
+             (reference-explorer-source-thesaurus-result-create :term "sample")
+             context))
+           (reference-explorer-ui--consult-origin context))
       (goto-char (point-min))
       (delete-char 1)
       (insert "E")
       (should-error
-       (reference-explorer-ui-thesaurus-replace candidate)
+       (reference-explorer-ui-thesaurus-accept candidate)
        :type 'user-error)
       (should (equal (buffer-string) "Example")))))
 
-(ert-deftest reference-explorer-ui-thesaurus-preview-is-local-only ()
-  (let* ((candidate
-          (reference-explorer-ui--make-thesaurus-candidate
-           :result (reference-explorer-source-thesaurus-result-create :term "sample")))
-         searched)
-    (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
-              ((symbol-function
-                'reference-explorer-source-lookup--quick-search-entries)
-               (lambda (query)
-                 (setq searched query)
-                 '(local-entry)))
-              ((symbol-function 'reference-explorer-source-thesaurus-fetch)
-               (lambda (&rest _)
-                 (ert-fail "Preview performed an online search"))))
-      (should (eq (reference-explorer-ui--candidate-preview-entry candidate)
-                  'local-entry))
-      (should (equal searched "sample")))))
-
-(ert-deftest reference-explorer-ui-thesaurus-preview-honors-source-order ()
-  (let* ((reference-explorer-source-lookup-thesaurus-preview-sources
-          '("preferred" "fallback"))
-         (candidate
-          (reference-explorer-ui--make-thesaurus-candidate
-           :result (reference-explorer-source-thesaurus-result-create :term "sample"))))
-    (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
-              ((symbol-function
-                'reference-explorer-source-lookup--quick-search-entries)
-               (lambda (_query) '(other-entry fallback-entry preferred-entry)))
-              ((symbol-function 'reference-explorer-source-lookup-entry-source)
-               (lambda (entry)
-                 (pcase entry
-                   ('preferred-entry "preferred")
-                   ('fallback-entry "fallback")
-                   (_ "other")))))
-      (should
-       (eq (reference-explorer-ui--candidate-preview-entry candidate)
-           'preferred-entry)))))
-
-(ert-deftest reference-explorer-ui-thesaurus-preview-can-exclude-all-sources ()
-  (let* ((reference-explorer-source-lookup-thesaurus-preview-sources '("unavailable"))
-         (candidate
-          (reference-explorer-ui--make-thesaurus-candidate
-           :result (reference-explorer-source-thesaurus-result-create :term "sample"))))
-    (cl-letf (((symbol-function 'lookup-initialize) #'ignore)
-              ((symbol-function
-                'reference-explorer-source-lookup--quick-search-entries)
-               (lambda (_query) '(entry)))
-              ((symbol-function 'reference-explorer-source-lookup-entry-source)
-               (lambda (_entry) "other")))
-      (should-not
-       (reference-explorer-ui--candidate-preview-entry candidate)))))
+(ert-deftest reference-explorer-ui-thesaurus-does-not-preview ()
+  (let ((candidate
+         (reference-explorer-source-make-candidate
+          'thesaurus
+          (reference-explorer-source-thesaurus-result-create :term "sample")
+          nil)))
+    (should-not (reference-explorer-ui--candidate-preview-entry candidate))))
 
 (ert-deftest reference-explorer-ui-thesaurus-list-shows-only-terms ()
   (let ((candidate
-         (reference-explorer-ui--make-thesaurus-candidate
-          :result
+         (reference-explorer-source-make-candidate
+          'thesaurus
           (reference-explorer-source-thesaurus-result-create
-           :term "sample" :rating 91 :votes 12))))
+           :term "sample" :rating 91 :votes 12)
+          nil)))
     (should (equal (reference-explorer-ui--candidate-label candidate)
                    "sample"))
     (should (string-empty-p
@@ -1587,16 +1625,15 @@
                      (reference-explorer-source-thesaurus-result-create
                       :term "sample")))))
                 ((symbol-function
-                  'reference-explorer-ui--thesaurus-show-targets)
-                 (lambda (query targets _window _marker _bounds)
-                   (setq shown (list query targets)))))
+                  'reference-explorer-ui--thesaurus-show-candidates)
+                 (lambda (query candidates context _bounds)
+                   (setq shown (list query candidates context)))))
         (reference-explorer-ui-thesaurus-at-point))
       (should (equal fetches '(("example" synonyms))))
       (should (equal (car shown) "example"))
       (should
        (equal
-        (reference-explorer-ui--thesaurus-candidate-original
-         (car (cadr shown)))
+        (reference-explorer-context-selection-text (caddr shown))
         "example")))))
 
 (ert-deftest reference-explorer-ui-thesaurus-embark-default-is-replacement ()
@@ -1605,7 +1642,7 @@
   (should
    (eq (alist-get 'reference-explorer-source-thesaurus-candidate
                   embark-default-action-overrides)
-       #'reference-explorer-ui-thesaurus-replace))
+       #'reference-explorer-ui-thesaurus-accept))
   (should
    (eq (lookup-key reference-explorer-ui-thesaurus-embark-map (kbd "l"))
        #'reference-explorer-ui-thesaurus-lookup))

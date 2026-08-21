@@ -45,7 +45,6 @@
 (defvar completion-extra-properties)
 (defvar reference-explorer-source-lookup-content-buffer-name)
 (defvar reference-explorer-source-lookup-preview-highlight-sources)
-(defvar reference-explorer-source-lookup-thesaurus-preview-sources)
 
 (autoload 'reference-explorer-source-docset-manager-install "reference-explorer-source-docset-manager"
   "Install a version-selected docset." t)
@@ -279,6 +278,8 @@ The frame is clamped to the available height of its parent frame."
 (cl-defstruct (reference-explorer-ui--quick-session
                (:constructor reference-explorer-ui--make-quick-session))
   "Resources and selection state owned by one quick reference invocation."
+  source
+  context
   query
   query-options
   query-index
@@ -293,19 +294,9 @@ The frame is clamped to the available height of its parent frame."
   list-offset
   preview
   preview-timer
-  accept-function
   consult-function
   help
   exit-function)
-
-(cl-defstruct (reference-explorer-ui--thesaurus-candidate
-               (:constructor reference-explorer-ui--make-thesaurus-candidate))
-  "A thesaurus RESULT and the source range it may replace."
-  result
-  buffer
-  beginning
-  end
-  original)
 
 (defvar reference-explorer-ui-history nil
   "Minibuffer history for Consult reference queries.")
@@ -536,13 +527,15 @@ empty result lists."
   "Return Consult candidates for docset INPUT in major MODE."
   (cl-loop for result in (reference-explorer-source-docset-search input mode)
            for id from 0
-           for heading = (reference-explorer-source-docset-result-name result)
+           for value = (reference-explorer-source-make-candidate
+                        'docset result reference-explorer-ui--consult-origin)
+           for heading = (reference-explorer-candidate-label value)
            for candidate = (consult--tofu-append heading id)
            do (progn
                 (put-text-property (length heading) (length candidate)
                                    'display "" candidate)
                 (put-text-property 0 (length heading)
-                                   'consult--candidate result candidate))
+                                   'consult--candidate value candidate))
            collect candidate))
 
 (defun reference-explorer-ui--docset-annotation (candidate &optional mode)
@@ -555,11 +548,16 @@ empty result lists."
 
 (defun reference-explorer-ui-docset-candidate (candidate)
   "Return the docset result stored in CANDIDATE, or nil."
-  (when (stringp candidate)
-    (let ((value (or (get-text-property 0 'consult--candidate candidate)
-                     (get-text-property 0 'reference-explorer-ui-docset
-                                        candidate))))
-      (and (reference-explorer-source-docset-result-p value) value))))
+  (let ((value
+         (cond
+          ((reference-explorer-candidate-p candidate) candidate)
+          ((stringp candidate)
+           (or (get-text-property 0 'consult--candidate candidate)
+               (get-text-property 0 'reference-explorer-ui-docset
+                                  candidate))))))
+    (when (reference-explorer-candidate-p value)
+      (setq value (reference-explorer-candidate-value value)))
+    (and (reference-explorer-source-docset-result-p value) value)))
 
 
 
@@ -570,11 +568,8 @@ empty result lists."
 (defun reference-explorer-ui--candidate-label (candidate)
   "Return the visible label for reference CANDIDATE."
   (cond
-   ((reference-explorer-source-result-p candidate)
-    (reference-explorer-source-result-label candidate))
-   ((reference-explorer-ui--thesaurus-candidate-p candidate)
-    (reference-explorer-source-thesaurus-result-term
-     (reference-explorer-ui--thesaurus-candidate-result candidate)))
+   ((reference-explorer-candidate-p candidate)
+    (reference-explorer-candidate-label candidate))
    ((reference-explorer-source-docset-result-p candidate)
     (reference-explorer-source-docset-result-name candidate))
    (t (reference-explorer-source-lookup--plain-entry-heading candidate))))
@@ -623,9 +618,8 @@ Fall back to an explicit text label when `nerd-icons-corfu' is unavailable."
   "Return a compact annotation for reference CANDIDATE.
 SHOW-DOCSET-SOURCE keeps the source name when several docsets are searched."
   (cond
-   ((reference-explorer-source-result-p candidate)
-    (reference-explorer-source-result-annotation candidate))
-   ((reference-explorer-ui--thesaurus-candidate-p candidate) "")
+   ((reference-explorer-candidate-p candidate)
+    (reference-explorer-candidate-annotation candidate))
    ((reference-explorer-source-docset-result-p candidate)
     (let ((icon
            (reference-explorer-ui--docset-kind-icon
@@ -639,31 +633,17 @@ SHOW-DOCSET-SOURCE keeps the source name when several docsets are searched."
 
 (defun reference-explorer-ui--candidate-preview-entry (candidate)
   "Return a local entry suitable for previewing CANDIDATE."
-  (if (or (reference-explorer-source-result-p candidate)
-          (reference-explorer-source-docset-result-p candidate)
-          (not (reference-explorer-ui--thesaurus-candidate-p candidate)))
-      candidate
-    ;; Candidate navigation must never contact Power Thesaurus.  Reuse the
-    ;; local Lookup backend, whose own result cache also makes revisiting a
-    ;; candidate inexpensive.
-    (when (and (fboundp 'reference-explorer-source-lookup-available-p)
-               (reference-explorer-source-lookup-available-p))
-      (let ((entries
-             (reference-explorer-source-lookup--quick-search-entries
-              (reference-explorer-ui--candidate-label candidate))))
-        (if (null reference-explorer-source-lookup-thesaurus-preview-sources)
-            (car entries)
-          (cl-loop
-           for source in reference-explorer-source-lookup-thesaurus-preview-sources
-           thereis
-           (seq-find
-            (lambda (entry)
-              (equal (reference-explorer-source-lookup-entry-source entry) source))
-            entries)))))))
+  (let ((source
+         (cond
+          ((reference-explorer-candidate-p candidate)
+           (reference-explorer-candidate-source candidate))
+          ((reference-explorer-source-docset-result-p candidate) 'docset)
+          (t 'lookup))))
+    (and (reference-explorer-source-preview-p source) candidate)))
 
 (defun reference-explorer-ui--preview-query-for-entry (entry query)
   "Return QUERY when ENTRY's source enables preview highlighting."
-  (and (not (reference-explorer-source-result-p entry))
+  (and (not (reference-explorer-candidate-p entry))
        (not (reference-explorer-source-docset-result-p entry))
        query
        (member (reference-explorer-source-lookup-entry-source entry)
@@ -679,8 +659,8 @@ SHOW-DOCSET-SOURCE keeps the source name when several docsets are searched."
 (defun reference-explorer-ui--render-entry (entry buffer-name)
   "Render reference ENTRY in BUFFER-NAME and return that buffer."
   (cond
-   ((reference-explorer-source-result-p entry)
-    (reference-explorer-source-result-render entry buffer-name))
+   ((reference-explorer-candidate-p entry)
+    (reference-explorer-candidate-render entry buffer-name))
    ((reference-explorer-source-docset-result-p entry)
     (reference-explorer-source-docset-render entry buffer-name))
    (t (reference-explorer-source-lookup-render-entry entry buffer-name))))
@@ -768,11 +748,11 @@ Highlight literal QUERY occurrences when QUERY is non-nil."
   "Render reference ENTRY and display it as committed Popper content."
   (let ((buffer
          (reference-explorer-ui--render-entry
-          entry
-          (cond
-           ((reference-explorer-source-result-p entry)
+         entry
+         (cond
+           ((reference-explorer-candidate-p entry)
             (format "*Reference %s*"
-                    (reference-explorer-source-result-source entry)))
+                    (reference-explorer-candidate-source entry)))
            ((reference-explorer-source-docset-result-p entry)
             reference-explorer-source-docset-content-buffer-name)
            (t reference-explorer-source-lookup-content-buffer-name)))))
@@ -780,15 +760,43 @@ Highlight literal QUERY occurrences when QUERY is non-nil."
       (funcall reference-explorer-ui-display-buffer-function buffer))
     buffer))
 
-(defun reference-explorer-ui--read-source-result (source results context)
-  "Read one of SOURCE RESULTS with annotations for CONTEXT."
+(defun reference-explorer-ui-commit-display (candidate _context)
+  "Display CANDIDATE, reusing the active quick preview when possible."
+  (let* ((session reference-explorer-ui--quick-session)
+         (preview (and session
+                       (reference-explorer-ui--quick-session-preview session)))
+         (reuse (and (reference-explorer-ui--preview-p preview)
+                     (eq candidate
+                         (reference-explorer-ui--preview-entry preview))
+                     (buffer-live-p
+                      (reference-explorer-ui--preview-buffer preview))
+                     (not (reference-explorer-ui--cached-docset-webkit-preview-p
+                           preview)))))
+    (if (not reuse)
+        (reference-explorer-ui--display-entry candidate)
+      (let ((frame (reference-explorer-ui--preview-frame preview))
+            (buffer (reference-explorer-ui--preview-buffer preview)))
+        (setf (reference-explorer-ui--quick-session-preview session) nil)
+        (when (eq preview reference-explorer-ui--active-temporary-preview)
+          (setq reference-explorer-ui--active-temporary-preview nil))
+        (when (frame-live-p frame)
+          (set-frame-parameter frame 'reference-explorer-ui-preview-buffer nil)
+          (delete-frame frame))
+        (save-selected-window
+          (funcall reference-explorer-ui-display-buffer-function buffer))
+        buffer))))
+
+(reference-explorer-register-commit-action
+ 'display #'reference-explorer-ui-commit-display)
+
+(defun reference-explorer-ui--read-source-candidate (source entries _context)
+  "Read one of SOURCE candidate ENTRIES with cached annotations."
   (let* ((candidates
           (cl-loop
-           for result in results
+           for result in entries
            for index from 1
-           for label = (reference-explorer-source-result-label result)
-           for annotation = (reference-explorer-source-result-annotation
-                             result context)
+           for label = (reference-explorer-candidate-label result)
+           for annotation = (reference-explorer-candidate-annotation result)
            collect
            (cons
             (format "%s%s  [%d]" label
@@ -816,34 +824,37 @@ Highlight literal QUERY occurrences when QUERY is non-nil."
      (lambda (outcome)
        (let ((status (reference-explorer-search-outcome-status outcome))
              (results (reference-explorer-search-outcome-entries outcome)))
-       (pcase status
-        ('no-match
-         (message "%s: no matches for “%s”" source query))
-        ('delegated nil)
-        ('unavailable
-         (signal 'reference-explorer-source-unavailable
-                 (list (or (reference-explorer-search-outcome-message outcome)
-                           (format "Source is unavailable: %s" source)))))
-        ('failed
-         (message "%s: %s" source
-                  (or (reference-explorer-search-outcome-message outcome)
-                      "search failed")))
-        ('matched
-         (if (display-graphic-p)
-         (reference-explorer-ui--quick-open-session
-          (reference-explorer-ui--make-quick-session
-           :query query
-           :query-options (list (cons query results))
-           :query-index 0
-           :entries results
-           :index 0
-           :source-window (reference-explorer-context-window context)
-           :source-marker (reference-explorer-context-marker context)
-           :help "TAB:open  H-i:preview操作  H-q:quit"))
-           (when-let ((result
-                       (reference-explorer-ui--read-source-result
-                        source results context)))
-             (reference-explorer-ui--display-entry result))))))))))
+         (pcase status
+           ('no-match
+            (message "%s: no matches for “%s”" source query))
+           ('delegated nil)
+           ('unavailable
+            (signal 'reference-explorer-source-unavailable
+                    (list
+                     (or (reference-explorer-search-outcome-message outcome)
+                         (format "Source is unavailable: %s" source)))))
+           ('failed
+            (message "%s: %s" source
+                     (or (reference-explorer-search-outcome-message outcome)
+                         "search failed")))
+           ('matched
+            (if (display-graphic-p)
+                (reference-explorer-ui--quick-open-session
+                 (reference-explorer-ui--make-quick-session
+                  :source source
+                  :context context
+                  :query query
+                  :query-options (list (cons query results))
+                  :query-index 0
+                  :entries results
+                  :index 0
+                  :source-window (reference-explorer-context-window context)
+                  :source-marker (reference-explorer-context-marker context)
+                  :help "TAB:commit  H-i:preview操作  H-q:quit"))
+              (when-let ((result
+                          (reference-explorer-ui--read-source-candidate
+                           source results context)))
+                (reference-explorer-candidate-commit result context))))))))))
 
 (setq reference-explorer-source-default-present-function
       #'reference-explorer-ui-open-source)
@@ -2220,18 +2231,22 @@ Selection styling is applied by the renderer across the complete visual row."
   (reference-explorer-ui--quick-change-query -1))
 
 (defun reference-explorer-ui-quick-display-entry ()
-  "Accept the selected quick candidate using its session action."
+  "Commit the selected quick candidate using its source action."
   (interactive)
   (when-let ((session reference-explorer-ui--quick-session)
              (entry (reference-explorer-ui--quick-current-entry)))
-    (reference-explorer-ui--quick-cancel-preview session)
-    (if-let ((accept
-              (reference-explorer-ui--quick-session-accept-function session)))
-        (progn
-          (reference-explorer-ui-quick-quit)
-          (funcall accept entry))
+    (if (reference-explorer-candidate-p entry)
+        (let ((context (reference-explorer-ui--quick-context))
+              (source-window
+               (reference-explorer-ui--quick-session-source-window session)))
+          (if (window-live-p source-window)
+              (with-selected-window source-window
+                (reference-explorer-candidate-commit entry context))
+            (reference-explorer-candidate-commit entry context))
+          (reference-explorer-ui-quick-quit))
       (let ((source-window
              (reference-explorer-ui--quick-session-source-window session)))
+        (reference-explorer-ui--quick-cancel-preview session)
         (if (window-live-p source-window)
             (with-selected-window source-window
               (reference-explorer-ui--display-entry entry))
@@ -2282,10 +2297,11 @@ Selection styling is applied by the renderer across the complete visual row."
 (defun reference-explorer-ui--quick-context ()
   "Return a reference context for the active quick reference query."
   (when-let ((session reference-explorer-ui--quick-session))
-    (reference-explorer-context-create
-     :query (reference-explorer-ui--quick-session-query session)
-     :marker (reference-explorer-ui--quick-session-source-marker session)
-     :window (reference-explorer-ui--quick-session-source-window session))))
+    (or (reference-explorer-ui--quick-session-context session)
+        (reference-explorer-context-create
+         :query (reference-explorer-ui--quick-session-query session)
+         :marker (reference-explorer-ui--quick-session-source-marker session)
+         :window (reference-explorer-ui--quick-session-source-window session)))))
 
 (defun reference-explorer-ui--quick-run-source (&optional source)
   "Open the active quick reference query through SOURCE or configured order."
@@ -2353,9 +2369,9 @@ Selection styling is applied by the renderer across the complete visual row."
 ;; Thesaurus candidate selection
 
 (defun reference-explorer-ui--thesaurus-candidate-value (candidate)
-  "Return the thesaurus target stored in CANDIDATE."
+  "Return the normalized thesaurus candidate stored in CANDIDATE."
   (cond
-   ((reference-explorer-ui--thesaurus-candidate-p candidate) candidate)
+   ((reference-explorer-candidate-p candidate) candidate)
    ((stringp candidate)
     (or (get-text-property 0 'consult--candidate candidate)
         (let ((position
@@ -2366,59 +2382,25 @@ Selection styling is applied by the renderer across the complete visual row."
 
 (defun reference-explorer-ui--thesaurus-term (candidate)
   "Return the term represented by thesaurus CANDIDATE."
-  (when-let ((target
+  (when-let ((value
               (reference-explorer-ui--thesaurus-candidate-value candidate)))
-    (reference-explorer-source-thesaurus-result-term
-     (reference-explorer-ui--thesaurus-candidate-result target))))
+    (reference-explorer-candidate-label value)))
 
-(defun reference-explorer-ui--preserve-word-case (replacement original)
-  "Adjust REPLACEMENT to the simple letter case used by ORIGINAL."
-  (cond
-   ((and (string-match-p "[[:alpha:]]" original)
-         (equal original (upcase original)))
-    (upcase replacement))
-   ((and (> (length original) 0)
-         (equal original (capitalize original)))
-    (capitalize replacement))
-   (t replacement)))
+(defun reference-explorer-ui--thesaurus-context (candidate)
+  "Return replacement context attached to Consult CANDIDATE."
+  (and (stringp candidate)
+       (get-text-property 0 'reference-explorer-context candidate)))
 
-(defun reference-explorer-ui-thesaurus-replace (candidate)
-  "Replace the source text captured by thesaurus CANDIDATE."
+(defun reference-explorer-ui-thesaurus-accept (candidate)
+  "Run the Thesaurus source's declared action for CANDIDATE."
   (interactive)
-  (let* ((target
-          (reference-explorer-ui--thesaurus-candidate-value candidate))
-         (buffer
-          (and target
-               (reference-explorer-ui--thesaurus-candidate-buffer target)))
-         (beginning
-          (and target
-               (reference-explorer-ui--thesaurus-candidate-beginning target)))
-         (end
-          (and target
-               (reference-explorer-ui--thesaurus-candidate-end target)))
-         (original
-          (and target
-               (reference-explorer-ui--thesaurus-candidate-original target)))
-         (term (reference-explorer-ui--thesaurus-term target)))
-    (unless (and term (buffer-live-p buffer)
-                 (markerp beginning) (marker-position beginning)
-                 (markerp end) (marker-position end)
-                 (eq (marker-buffer beginning) buffer)
-                 (eq (marker-buffer end) buffer))
-      (user-error "The thesaurus replacement target is no longer available"))
-    (with-current-buffer buffer
-      (let ((start (marker-position beginning))
-            (finish (marker-position end)))
-        (unless (equal original
-                       (buffer-substring-no-properties start finish))
-          (user-error "The original text changed; refusing to replace it"))
-        (let ((replacement
-               (reference-explorer-ui--preserve-word-case term original)))
-          (atomic-change-group
-            (goto-char start)
-            (delete-region start finish)
-            (insert replacement))
-          (message "Replaced “%s” with “%s”" original replacement))))))
+  (if-let ((value
+            (reference-explorer-ui--thesaurus-candidate-value candidate)))
+      (reference-explorer-candidate-commit
+       value
+       (or (reference-explorer-ui--thesaurus-context candidate)
+           reference-explorer-ui--consult-origin))
+    (user-error "Thesaurus candidate data is unavailable")))
 
 (defun reference-explorer-ui-thesaurus-copy (candidate)
   "Copy the term represented by thesaurus CANDIDATE."
@@ -2429,15 +2411,11 @@ Selection styling is applied by the renderer across the complete visual row."
 
 (defun reference-explorer-ui--thesaurus-run-source (candidate source)
   "Open thesaurus CANDIDATE through reference SOURCE."
-  (let* ((target
-          (reference-explorer-ui--thesaurus-candidate-value candidate))
-         (term (reference-explorer-ui--thesaurus-term target))
-         (buffer
-          (and target
-               (reference-explorer-ui--thesaurus-candidate-buffer target)))
-         (marker
-          (and target
-               (reference-explorer-ui--thesaurus-candidate-beginning target))))
+  (let* ((term (reference-explorer-ui--thesaurus-term candidate))
+         (context (or (reference-explorer-ui--thesaurus-context candidate)
+                      reference-explorer-ui--consult-origin))
+         (marker (and context (reference-explorer-context-marker context)))
+         (window (and context (reference-explorer-context-window context))))
     (unless term
       (user-error "Thesaurus candidate data is unavailable"))
     (reference-explorer-run-source
@@ -2447,9 +2425,7 @@ Selection styling is applied by the renderer across the complete visual row."
       :marker (if (and (markerp marker) (marker-position marker))
                   (copy-marker marker)
                 (copy-marker (point)))
-      :window (or (and (buffer-live-p buffer)
-                       (get-buffer-window buffer t))
-                  (selected-window))))))
+      :window (or (and (window-live-p window) window) (selected-window))))))
 
 (defun reference-explorer-ui-thesaurus-lookup (candidate)
   "Open thesaurus CANDIDATE with Lookup."
@@ -2466,118 +2442,81 @@ Selection styling is applied by the renderer across the complete visual row."
   (interactive)
   (reference-explorer-ui--thesaurus-run-source candidate 'monokakido))
 
-(defun reference-explorer-ui--thesaurus-consult-candidate (target id)
-  "Return a Consult string for thesaurus TARGET disambiguated by ID."
-  (let* ((term (reference-explorer-ui--thesaurus-term target))
+(defun reference-explorer-ui--thesaurus-consult-candidate
+    (value context id)
+  "Return a Consult string for thesaurus VALUE and replacement CONTEXT."
+  (let* ((term (reference-explorer-ui--thesaurus-term value))
          (candidate (consult--tofu-append term id)))
     (put-text-property (length term) (length candidate) 'display "" candidate)
-    (put-text-property 0 (length term) 'consult--candidate target candidate)
+    (put-text-property 0 (length term) 'consult--candidate value candidate)
+    (put-text-property 0 (length term) 'reference-explorer-context
+                       context candidate)
     candidate))
 
 (defun reference-explorer-ui--thesaurus-annotation (candidate)
   "Return an annotation for the thesaurus Consult CANDIDATE."
-  (when-let ((target
+  (when-let ((value
               (reference-explorer-ui--thesaurus-candidate-value candidate)))
     (let ((annotation
-           (reference-explorer-ui--candidate-annotation target)))
+           (reference-explorer-ui--candidate-annotation value)))
       (unless (string-empty-p annotation)
         (concat "  " annotation)))))
 
-(defun reference-explorer-ui--thesaurus-preview-state ()
-  "Return a Consult state function using only local reference previews."
-  (let (preview)
-    (lambda (action candidate)
-      (when preview
-        (if (eq preview reference-explorer-ui--preview-interaction-request)
-            (setq reference-explorer-ui--preview-interaction-request nil)
-          (reference-explorer-ui--close-temporary-preview preview))
-        (setq preview nil))
-      (when (and (eq action 'preview) candidate)
-        (when-let* ((target
-                     (reference-explorer-ui--thesaurus-candidate-value
-                      candidate))
-                    (entry
-                     (reference-explorer-ui--candidate-preview-entry target))
-                    (minibuffer-window (active-minibuffer-window))
-                    (position
-                     (reference-explorer-ui--vertico-candidate-position)))
-          (setq preview
-                (reference-explorer-ui--show-temporary-preview-at-position
-                 entry position minibuffer-window
-                 (reference-explorer-ui--thesaurus-term target))))))))
-
 (defun reference-explorer-ui--consult-thesaurus
-    (targets &optional origin-window)
-  "Select one of fixed thesaurus TARGETS and replace its source text.
-ORIGIN-WINDOW receives focus when an interactive preview is closed."
+    (candidates context)
+  "Select one of fixed thesaurus CANDIDATES using replacement CONTEXT."
   (require 'consult)
-  (if (null targets)
+  (if (null candidates)
       (message "Thesaurus: no matches")
     (let* ((tag (make-symbol "reference-explorer-source-thesaurus-control"))
            (reference-explorer-ui--consult-toggle-tag tag)
            (reference-explorer-ui--consult-origin
-            (reference-explorer-context-create
-             :window (or origin-window (selected-window))))
+            context)
            (result
             (catch tag
               (list
                'return
                (consult--read
-                (cl-loop for target in targets
+                (cl-loop for value in candidates
                          for id from 0
                          collect
                          (reference-explorer-ui--thesaurus-consult-candidate
-                          target id))
+                          value context id))
                 :prompt "Synonym: "
                 :category 'reference-explorer-source-thesaurus-candidate
                 :require-match t
                 :sort nil
                 :lookup #'consult--lookup-candidate
-                :annotate #'reference-explorer-ui--thesaurus-annotation
-                :state (reference-explorer-ui--thesaurus-preview-state)
-                :preview-key
-                `(:debounce ,reference-explorer-ui-preview-debounce any))))))
+                :annotate #'reference-explorer-ui--thesaurus-annotation)))))
       (pcase result
         (`(return ,selected)
          (when selected
-           (reference-explorer-ui-thesaurus-replace selected)))
+           (reference-explorer-ui-thesaurus-accept selected)))
         (`(interact ,preview ,window)
          (reference-explorer-ui--activate-preview-interaction
           preview window))))))
 
-(defun reference-explorer-ui--thesaurus-show-targets
-    (query targets source-window source-marker source-bounds)
-  "Show QUERY's thesaurus TARGETS using quick UI or Consult."
+(defun reference-explorer-ui--thesaurus-show-candidates
+    (query candidates context source-bounds)
+  "Show QUERY's thesaurus CANDIDATES using quick UI or Consult."
   (if (not (display-graphic-p))
-      (reference-explorer-ui--consult-thesaurus targets source-window)
+      (reference-explorer-ui--consult-thesaurus candidates context)
     (reference-explorer-ui--quick-open-session
      (reference-explorer-ui--make-quick-session
       :query query
-      :query-options (list (cons query targets))
+      :context context
+      :query-options (list (cons query candidates))
       :query-index 0
-      :entries targets
+      :entries candidates
       :index 0
-      :source-window source-window
-      :source-marker source-marker
+      :source-window (reference-explorer-context-window context)
+      :source-marker (reference-explorer-context-marker context)
       :source-bounds source-bounds
-      :accept-function #'reference-explorer-ui-thesaurus-replace
+      :source 'thesaurus
       :consult-function
       (lambda (entries)
-        (reference-explorer-ui--consult-thesaurus entries source-window))
-      :help "TAB:置換  H-i:preview操作  M-m:Consult  Embark:その他の操作"))))
-
-(defun reference-explorer-ui--thesaurus-targets
-    (results buffer beginning end original)
-  "Wrap RESULTS with their editable source context."
-  (mapcar
-   (lambda (result)
-     (reference-explorer-ui--make-thesaurus-candidate
-      :result result
-      :buffer buffer
-      :beginning (copy-marker beginning)
-      :end (copy-marker end t)
-      :original original))
-   results))
+        (reference-explorer-ui--consult-thesaurus entries context))
+      :help "TAB:置換  M-m:Consult  Embark:その他の操作"))))
 
 (defun reference-explorer-ui--query-bounds-at-point (query)
   "Return buffer bounds matching extracted QUERY around point."
@@ -2609,15 +2548,24 @@ ORIGIN-WINDOW receives focus when an interactive preview is closed."
         ((null results)
          (message "Thesaurus: no synonyms for “%s”" query))
         (t
-         (let ((targets
-                (reference-explorer-ui--thesaurus-targets
-                 results buffer beginning-marker end-marker original)))
-           (reference-explorer-ui--thesaurus-show-targets
-            query targets
-            (if (window-live-p source-window)
-                source-window
-              (or (get-buffer-window buffer t) (selected-window)))
-            source-marker (cons beginning-marker end-marker))))))
+         (let* ((context
+                 (reference-explorer-context-create
+                  :phrase query :query query :marker source-marker
+                  :window (if (window-live-p source-window)
+                              source-window
+                            (or (get-buffer-window buffer t)
+                                (selected-window)))
+                  :selection-beginning beginning-marker
+                  :selection-end end-marker
+                  :selection-text original))
+                (candidates
+                 (mapcar (lambda (result)
+                           (reference-explorer-source-make-candidate
+                            'thesaurus result context))
+                         results)))
+           (reference-explorer-ui--thesaurus-show-candidates
+            query candidates context
+            (cons beginning-marker end-marker))))))
      (lambda (message)
        (message "Thesaurus: %s" message)))))
 
@@ -2644,25 +2592,22 @@ service."
 (defun reference-explorer-ui-thesaurus-search-candidate (candidate)
   "Search synonyms of thesaurus CANDIDATE as a new explicit request."
   (interactive)
-  (let* ((target
-          (reference-explorer-ui--thesaurus-candidate-value candidate))
-         (term (reference-explorer-ui--thesaurus-term target))
-         (buffer
-          (and target
-               (reference-explorer-ui--thesaurus-candidate-buffer target)))
-         (beginning
-          (and target
-               (reference-explorer-ui--thesaurus-candidate-beginning target)))
-         (end
-          (and target
-               (reference-explorer-ui--thesaurus-candidate-end target))))
+  (let* ((term (reference-explorer-ui--thesaurus-term candidate))
+         (context (or (reference-explorer-ui--thesaurus-context candidate)
+                      reference-explorer-ui--consult-origin))
+         (beginning (and context
+                         (reference-explorer-context-selection-beginning context)))
+         (end (and context
+                   (reference-explorer-context-selection-end context)))
+         (buffer (and (markerp beginning) (marker-buffer beginning))))
     (unless (and term (buffer-live-p buffer)
                  (markerp beginning) (marker-position beginning)
                  (markerp end) (marker-position end))
       (user-error "The thesaurus source context is no longer available"))
     (reference-explorer-ui--thesaurus-search
      term buffer beginning end
-     (or (get-buffer-window buffer t) (selected-window))
+     (or (and context (reference-explorer-context-window context))
+         (get-buffer-window buffer t) (selected-window))
      (copy-marker beginning))))
 
 
@@ -2888,7 +2833,12 @@ ORIGIN-WINDOW receives focus after direct preview interaction ends."
     (pcase (reference-explorer-ui--consult-docset-read query mode)
       (`(return ,result)
        (when result
-         (reference-explorer-ui--display-entry result)))
+         (reference-explorer-candidate-commit
+          (if (reference-explorer-candidate-p result)
+              result
+            (reference-explorer-source-make-candidate
+             'docset result reference-explorer-ui--consult-origin))
+          reference-explorer-ui--consult-origin)))
       (`(interact ,preview ,window)
        (reference-explorer-ui--activate-preview-interaction
         preview window)))))
@@ -2912,7 +2862,16 @@ ORIGIN-WINDOW receives focus after direct preview interaction ends."
               (list (format "No installed docset is configured for %s" mode))))
     (let* ((queries (or (reference-explorer-ui--context-query-options context)
                         (list (reference-explorer-context-query context))))
-           (options (reference-explorer-ui--docset-quick-options queries mode))
+           (options
+            (mapcar
+             (lambda (option)
+               (cons (car option)
+                     (mapcar
+                      (lambda (result)
+                        (reference-explorer-source-make-candidate
+                         'docset result context))
+                      (cdr option))))
+             (reference-explorer-ui--docset-quick-options queries mode)))
            (query (caar options))
            (source-window (reference-explorer-context-window context))
            (source-marker (reference-explorer-context-marker context)))
@@ -2920,6 +2879,8 @@ ORIGIN-WINDOW receives focus after direct preview interaction ends."
           (reference-explorer-ui-consult-docset query mode source-window)
         (reference-explorer-ui--quick-open-session
          (reference-explorer-ui--make-quick-session
+          :source 'docset
+          :context context
           :query query
           :query-options options
           :query-index 0
@@ -2946,9 +2907,9 @@ ORIGIN-WINDOW receives focus after direct preview interaction ends."
   (set-keymap-parent reference-explorer-ui-docset-embark-map
                      embark-general-map)
   (define-key reference-explorer-ui-thesaurus-embark-map (kbd "RET")
-              #'reference-explorer-ui-thesaurus-replace)
+              #'reference-explorer-ui-thesaurus-accept)
   (define-key reference-explorer-ui-thesaurus-embark-map (kbd "r")
-              #'reference-explorer-ui-thesaurus-replace)
+              #'reference-explorer-ui-thesaurus-accept)
   (define-key reference-explorer-ui-thesaurus-embark-map (kbd "l")
               #'reference-explorer-ui-thesaurus-lookup)
   (define-key reference-explorer-ui-thesaurus-embark-map (kbd "w")
@@ -2960,7 +2921,7 @@ ORIGIN-WINDOW receives focus after direct preview interaction ends."
                  . reference-explorer-ui-thesaurus-embark-map))
   (setf (alist-get 'reference-explorer-source-thesaurus-candidate
                    embark-default-action-overrides)
-        #'reference-explorer-ui-thesaurus-replace)
+        #'reference-explorer-ui-thesaurus-accept)
   (define-key reference-explorer-ui-docset-embark-map (kbd "RET")
               #'reference-explorer-ui-display-docset-candidate)
   (define-key reference-explorer-ui-docset-embark-map (kbd "w")

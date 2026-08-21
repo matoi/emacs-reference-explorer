@@ -47,7 +47,8 @@ A search passes through four stages:
 1. A phrase selector obtains text from the buffer or region.
 2. The source's optional converter turns that phrase into its query.
 3. The source searches and reports a status-bearing outcome.
-4. A source-specific or shared presenter displays the result.
+4. Preview may render content lazily; selection runs the source's declared
+   commit action.
 
 Register a source with `reference-explorer-register-source`. Its search
 function receives `QUERY`, `CONTEXT`, and `COMPLETE`. It calls `COMPLETE` with
@@ -78,17 +79,26 @@ asynchronous searches.
  'my-glossary
  :title "My glossary"
  :search #'my-glossary-search
- :label #'my-glossary-heading
- :annotation (lambda (_entry _context) "local")
+ :candidate
+ (lambda (entry _context)
+   (reference-explorer-candidate-create
+    :label (my-glossary-heading entry)
+    :annotation "local"))
  :render #'my-glossary-render
+ :preview t
+ :commit 'display
  :available-p (lambda (_context) t))
 ```
 
-Matched entries are wrapped as source-owned results before reaching the shared
-candidate UI. `:label` and `:annotation` describe candidates, optional `:fetch`
-retrieves one selected entry's full content, and `:render` displays it. Use
-`:convert` for source-specific query conversion and `:present` when a source
-needs its own presentation flow.
+`:candidate` creates lightweight searchable metadata. Optional `:fetch` and
+`:render` retrieve and render content only when preview or display needs it.
+`:preview` enables candidate preview. `:commit` selects the final action; the
+built-in actions are `display` and `replace`, and a function may provide
+source-specific behavior. Use `:convert` for query conversion and `:present`
+for a source-specific presentation flow.
+
+`reference-explorer-source-preview-overrides` can enable or disable preview
+for individual sources without changing their registrations.
 
 A delegating source performs its external action in `:search`, reports
 `delegated`, and does not need candidate or rendering functions. The macOS and
@@ -243,18 +253,12 @@ settings are:
 
 `reference-explorer-ui-thesaurus-at-point` retrieves synonyms from [Power
 Thesaurus](https://www.powerthesaurus.org/) and replaces the active region or
-phrase. Results are cached; navigation and local Lookup previews make no
-additional request. Use is subject to the [Power Thesaurus Terms and
-Conditions](https://www.powerthesaurus.org/_terms_conditions).
+phrase. Results are cached. Thesaurus candidates declare replacement as their
+commit action and do not fetch or render preview content. Use is subject to the
+[Power Thesaurus Terms and Conditions](https://www.powerthesaurus.org/_terms_conditions).
 
-Set `reference-explorer-source-lookup-thesaurus-preview-sources` to prioritize
-local preview dictionaries. Embark adds replacement, Lookup, copy, and new
-synonym-search actions when available.
-
-```elisp
-(setq reference-explorer-source-lookup-thesaurus-preview-sources
-      '("English dictionary" "Fallback dictionary"))
-```
+Embark adds replacement, Lookup, copy, and new synonym-search actions when
+available.
 
 ## Key bindings
 

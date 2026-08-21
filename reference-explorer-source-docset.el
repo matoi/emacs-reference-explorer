@@ -790,13 +790,15 @@ Append optional EXTRA-STYLE after the docset's own stylesheets."
               :status (if entries 'matched 'no-match)
               :entries entries))))
 
-(defun reference-explorer-source-docset-protocol-annotation (result _context)
-  "Return a plain annotation for docset RESULT."
+(defun reference-explorer-source-docset-protocol-candidate (result _context)
+  "Normalize docset RESULT into lightweight completion metadata."
   (let ((feed
          (reference-explorer-source-docset-feed
           (reference-explorer-source-docset-result-docset result)))
         (type (reference-explorer-source-docset-result-type result)))
-    (string-join (delq nil (list type feed)) "  ")))
+    (reference-explorer-candidate-create
+     :label (reference-explorer-source-docset-result-name result)
+     :annotation (string-join (delq nil (list type feed)) "  "))))
 
 (defun reference-explorer-source-docset-protocol-available-p (context)
   "Return non-nil when docsets can search CONTEXT."
@@ -809,9 +811,10 @@ Append optional EXTRA-STYLE after the docset's own stylesheets."
  'docset
  :title "Dash docsets"
  :search #'reference-explorer-source-docset-protocol-search
- :label #'reference-explorer-source-docset-result-name
- :annotation #'reference-explorer-source-docset-protocol-annotation
+ :candidate #'reference-explorer-source-docset-protocol-candidate
  :render #'reference-explorer-source-docset-render
+ :preview t
+ :commit 'display
  :available-p #'reference-explorer-source-docset-protocol-available-p
  :present 'reference-explorer-ui-docset-present)
 

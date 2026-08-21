@@ -106,14 +106,6 @@ empty list disables query highlighting for every source."
   :type '(repeat string)
   :group 'reference-explorer-source-lookup)
 
-(defcustom reference-explorer-source-lookup-thesaurus-preview-sources nil
-  "Ordered Lookup dictionary sources used for thesaurus previews.
-Each string is a displayed dictionary title.  The first source with a matching
-entry is used.  Nil keeps the normal Lookup result order across all selected
-dictionaries.  A non-nil list with no matching entry suppresses the preview."
-  :type '(repeat string)
-  :group 'reference-explorer-source-lookup)
-
 (defvar reference-explorer-source-lookup--entry-cache (make-hash-table :test #'equal)
   "Lookup entries cached by search mode and backend query.")
 
@@ -208,10 +200,12 @@ groups are ordered by `reference-explorer-source-lookup-source-order'."
   "Return Consult candidates for Lookup INPUT in MODE."
   (cl-loop for entry in (reference-explorer-source-lookup--search-entries input mode)
            for id from 0
+           for value = (reference-explorer-source-make-candidate
+                        'lookup entry reference-explorer-ui--consult-origin)
            ;; Dictionary headings can contain raised glyphs and inline gaiji
            ;; images.  Completion rows should have uniform text metrics;
            ;; preserve those rich properties only in rendered content.
-           for heading = (reference-explorer-source-lookup--plain-entry-heading entry)
+           for heading = (reference-explorer-candidate-label value)
            for candidate = (consult--tofu-append heading id)
            do (progn
                 ;; Consult's tofu ID is already invisible, but some font and
@@ -222,27 +216,34 @@ groups are ordered by `reference-explorer-source-lookup-source-order'."
                 (put-text-property (length heading) (length candidate)
                                    'display "" candidate)
                 (put-text-property 0 (length heading)
-                                   'consult--candidate entry candidate))
+                                   'consult--candidate value candidate))
            collect candidate))
 
 (defun reference-explorer-source-lookup--entry-annotation (candidate)
   "Return the dictionary annotation for Lookup CANDIDATE."
-  (when-let* ((entry (get-text-property 0 'consult--candidate candidate))
-              (dictionary (lookup-entry-dictionary entry)))
-    (concat "  " (lookup-dictionary-title dictionary))))
+  (when-let ((value (get-text-property 0 'consult--candidate candidate)))
+    (let ((annotation (reference-explorer-candidate-annotation value)))
+      (unless (string-empty-p annotation)
+        (concat "  " annotation)))))
 
 ;; Temporary preview and committed Popper content
 
 (defun reference-explorer-source-lookup-candidate-entry (candidate)
   "Return the Lookup entry stored in CANDIDATE, or nil."
-  (and (stringp candidate)
-       (or (get-text-property 0 'consult--candidate candidate)
-           (let ((position
-                  (next-single-property-change
-                   0 'consult--candidate candidate (length candidate))))
-             (and (< position (length candidate))
-                  (get-text-property
-                   position 'consult--candidate candidate))))))
+  (let ((value
+         (cond
+          ((reference-explorer-candidate-p candidate) candidate)
+          ((stringp candidate)
+           (or (get-text-property 0 'consult--candidate candidate)
+               (let ((position
+                      (next-single-property-change
+                       0 'consult--candidate candidate (length candidate))))
+                 (and (< position (length candidate))
+                      (get-text-property
+                       position 'consult--candidate candidate))))))))
+    (if (reference-explorer-candidate-p value)
+        (reference-explorer-candidate-value value)
+      value)))
 
 (defun reference-explorer-source-lookup-entry-source (entry)
   "Return the displayed dictionary source name for Lookup ENTRY."
@@ -333,6 +334,21 @@ QUERIES, begin at that query while retaining the full expand/shrink sequence."
   (let* ((query-options
           (reference-explorer-ui--quick-query-options
            queries #'reference-explorer-source-lookup--quick-search-entries))
+         (context
+          (reference-explorer-context-create
+           :query initial-query :marker source-marker :window source-window
+           :selection-beginning (and source-bounds (car source-bounds))
+           :selection-end (and source-bounds (cdr source-bounds))))
+         (query-options
+          (mapcar
+           (lambda (option)
+             (cons (car option)
+                   (mapcar
+                    (lambda (entry)
+                      (reference-explorer-source-make-candidate
+                       'lookup entry context))
+                    (cdr option))))
+           query-options))
          (query-index
           (or (and initial-query
                    (cl-position initial-query query-options
@@ -349,6 +365,8 @@ QUERIES, begin at that query while retaining the full expand/shrink sequence."
       (let ((entries (cdr query-option)))
         (reference-explorer-ui--quick-open-session
          (reference-explorer-ui--make-quick-session
+          :source 'lookup
+          :context context
           :query query
           :query-options query-options
           :query-index query-index
@@ -610,7 +628,12 @@ QUERIES lists longest-to-shortest contextual inputs available with H-e/H-s."
       (reference-explorer-ui--activate-preview-interaction
        (car interaction) (cdr interaction)))
      (entry
-      (reference-explorer-ui--display-entry entry)))))
+      (reference-explorer-candidate-commit
+       (if (reference-explorer-candidate-p entry)
+           entry
+         (reference-explorer-source-make-candidate
+          'lookup entry reference-explorer-ui--consult-origin))
+       reference-explorer-ui--consult-origin)))))
 
 ;;;###autoload
 (defun reference-explorer-source-lookup-consult ()
@@ -672,9 +695,11 @@ Contextual input always starts in literal mode."
               :status (if entries 'matched 'no-match)
               :entries entries))))
 
-(defun reference-explorer-source-lookup-protocol-annotation (entry _context)
-  "Return the dictionary name annotating Lookup ENTRY."
-  (reference-explorer-source-lookup-entry-source entry))
+(defun reference-explorer-source-lookup-protocol-candidate (entry _context)
+  "Normalize Lookup ENTRY into lightweight completion metadata."
+  (reference-explorer-candidate-create
+   :label (reference-explorer-source-lookup--plain-entry-heading entry)
+   :annotation (reference-explorer-source-lookup-entry-source entry)))
 
 (defun reference-explorer-source-lookup-lookup-content-appearance ()
   "Apply the shared appearance to a Lookup content buffer."
@@ -694,9 +719,10 @@ Contextual input always starts in literal mode."
  'lookup
  :title "Lookup for Emacs"
  :search #'reference-explorer-source-lookup-protocol-search
- :label #'reference-explorer-source-lookup--plain-entry-heading
- :annotation #'reference-explorer-source-lookup-protocol-annotation
+ :candidate #'reference-explorer-source-lookup-protocol-candidate
  :render #'reference-explorer-source-lookup-render-entry
+ :preview t
+ :commit 'display
  :available-p #'reference-explorer-source-lookup-available-p
  :present #'reference-explorer-source-lookup-present)
 

@@ -2,8 +2,8 @@
 
 ;;; Commentary:
 
-;; Retrieve thesaurus candidates without imposing a presentation layer.  The
-;; default backend retrieves data from the Power Thesaurus website
+;; Retrieve lightweight thesaurus candidates for replacement workflows.
+;; The default backend retrieves data from the Power Thesaurus website
 ;; (https://www.powerthesaurus.org/) through its GraphQL endpoint at
 ;; https://api.powerthesaurus.org.  This is an independent integration and is
 ;; not affiliated with or endorsed by Power Thesaurus.  Use of the service is
@@ -51,6 +51,13 @@ starts only when this function is called explicitly."
   rating
   votes
   source)
+
+(defun reference-explorer-source-thesaurus-candidate (result _context)
+  "Normalize RESULT without retrieving or rendering additional content."
+  (let ((term (reference-explorer-source-thesaurus-result-term result)))
+    (reference-explorer-candidate-create
+     :label term
+     :commit-text term)))
 
 (defvar reference-explorer-source-thesaurus--term-id-cache (make-hash-table :test #'equal)
   "Power Thesaurus term IDs cached by normalized query.")
@@ -270,25 +277,13 @@ FAILURE defaults to reporting a user-facing message."
               (reference-explorer-search-outcome-create
                :status 'failed :message message)))))
 
-(defun reference-explorer-source-thesaurus-protocol-render (result buffer-name)
-  "Render thesaurus RESULT in BUFFER-NAME and return its buffer."
-  (let ((buffer (get-buffer-create buffer-name)))
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (insert (reference-explorer-source-thesaurus-result-term result))
-        (when-let ((relations
-                    (reference-explorer-source-thesaurus-result-relations result)))
-          (insert "\n\n" (string-join relations ", ")))
-        (special-mode)))
-    buffer))
-
 (reference-explorer-register-source
  'thesaurus
  :title "Power Thesaurus"
  :search #'reference-explorer-source-thesaurus-protocol-search
- :label #'reference-explorer-source-thesaurus-result-term
- :render #'reference-explorer-source-thesaurus-protocol-render)
+ :candidate #'reference-explorer-source-thesaurus-candidate
+ :preview nil
+ :commit 'replace)
 
 (provide 'reference-explorer-source-thesaurus)
 ;;; reference-explorer-source-thesaurus.el ends here

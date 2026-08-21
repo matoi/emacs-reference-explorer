@@ -28,7 +28,10 @@
   query
   marker
   window
-  automatic)
+  automatic
+  selection-beginning
+  selection-end
+  selection-text)
 
 (defcustom reference-explorer-phrase-selector-function
   #'reference-explorer-default-phrase-at-point
@@ -102,7 +105,12 @@ implicitly."
                     (region-beginning)
                   (funcall reference-explorer-origin-position-function)))
        :window (selected-window)
-       :automatic (not region-active)))))
+       :automatic (not region-active)
+       :selection-beginning
+       (and region-active (copy-marker (region-beginning)))
+       :selection-end
+       (and region-active (copy-marker (region-end) t))
+       :selection-text (and region-active phrase)))))
 
 (defun reference-explorer--sources-for-context (context)
   "Return the configured source chain for CONTEXT's major mode."

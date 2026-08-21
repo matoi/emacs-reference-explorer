@@ -33,6 +33,12 @@
     (should (= (reference-explorer-source-thesaurus-result-rating result) 91))
     (should (= (reference-explorer-source-thesaurus-result-votes result) 12))))
 
+(ert-deftest reference-explorer-source-thesaurus-declares-replacement-action ()
+  (let ((source (reference-explorer-get-source 'thesaurus)))
+    (should-not (reference-explorer-source-preview source))
+    (should (eq (reference-explorer-source-commit source) 'replace))
+    (should-not (reference-explorer-source-render-function source))))
+
 (ert-deftest reference-explorer-source-thesaurus-uncached-search-makes-two-requests ()
   (reference-explorer-source-thesaurus-test--with-empty-state
     (let ((requests 0)

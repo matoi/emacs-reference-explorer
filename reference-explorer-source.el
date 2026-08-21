@@ -4,8 +4,9 @@
 ;;; Commentary:
 
 ;; A source converts a selected phrase into its own query, performs the
-;; search, and reports a status-bearing outcome.  Candidate sources may also
-;; label, annotate, and render entries.  Delegating sources can instead hand
+;; search, and reports a status-bearing outcome.  Candidate sources normalize
+;; lightweight completion metadata once, render content lazily, declare preview
+;; policy, and select a commit action.  Delegating sources can instead hand
 ;; search and presentation to an external application.
 
 ;;; Code:
@@ -17,13 +18,16 @@
 (cl-defstruct (reference-explorer-source
                (:constructor reference-explorer-source--create))
   "Operations supplied by one registered reference source."
-  name title convert-function search-function fetch-function label-function
-  annotation-function render-function available-p-function present-function)
+  name title convert-function search-function candidate-function fetch-function
+  render-function preview commit available-p-function present-function)
 
-(cl-defstruct (reference-explorer-source-result
-               (:constructor reference-explorer-source-result-create))
-  "A source-owned VALUE returned from a registered SOURCE."
-  source value)
+(cl-defstruct (reference-explorer-candidate
+               (:constructor reference-explorer-candidate-create))
+  "A lightweight source result used for filtering and candidate actions.
+VALUE remains source-owned and may identify content fetched only for preview
+or display.  LABEL is searchable, ANNOTATION is display-only, and COMMIT-TEXT
+is the short string used by text-oriented commit actions such as `replace'."
+  source value label annotation commit-text)
 
 (cl-defstruct (reference-explorer-search-outcome
                (:constructor reference-explorer-search-outcome-create))
@@ -39,6 +43,16 @@ STATUS is one of `matched', `no-match', `delegated', `unavailable', or
   "Function used to present sources without their own presenter.
 The function receives a source name and converted context.")
 
+(defcustom reference-explorer-source-preview-overrides nil
+  "Per-source overrides for declared candidate preview policy.
+Each entry is (SOURCE . ENABLED).  Sources absent from this alist use the
+`:preview' value declared at registration time."
+  :type '(alist :key-type symbol :value-type boolean)
+  :group 'reference-explorer)
+
+(defvar reference-explorer-commit-actions nil
+  "Registered symbolic candidate commit actions.")
+
 (defvar reference-explorer-source-registered-hook nil
   "Hook run with a source name after it is registered or replaced.")
 
@@ -50,37 +64,42 @@ The function receives a source name and converted context.")
   (or (functionp value) (and value (symbolp value))))
 
 (cl-defun reference-explorer-register-source
-    (name &key title convert search fetch label annotation render available-p
-          present)
+    (name &key title convert search candidate fetch render preview
+          (commit 'display) available-p present)
   "Register source NAME and return its descriptor.
 
 CONVERT receives a selected phrase and CONTEXT and returns the source query;
 nil means identity conversion.  SEARCH receives QUERY, CONTEXT, and COMPLETE,
-and calls COMPLETE with a `reference-explorer-search-outcome'.  FETCH
-optionally retrieves the full content for one entry.  LABEL, ANNOTATION, and
-RENDER describe candidate results and may be omitted by a source that always
-reports `delegated'.  AVAILABLE-P receives CONTEXT.
+and calls COMPLETE with a `reference-explorer-search-outcome'.  CANDIDATE
+normalizes each matched source value and CONTEXT into a lightweight
+`reference-explorer-candidate'.  FETCH optionally retrieves full content only
+when RENDER is requested.  RENDER converts that content into a buffer.
+PREVIEW declares whether candidate navigation may request rendered content.
+COMMIT is a registered action symbol, a function receiving candidate and
+CONTEXT, or nil.  AVAILABLE-P receives CONTEXT.
 PRESENT receives the converted CONTEXT and may replace the shared candidate
 presenter for this source."
   (unless (symbolp name)
     (error "Source name must be a symbol: %S" name))
   (unless (reference-explorer-source--function-designator-p search)
     (error "Source %s requires a search function" name))
-  (dolist (operation `((convert . ,convert) (fetch . ,fetch) (label . ,label)
-                       (annotation . ,annotation) (render . ,render)
-                       (available-p . ,available-p) (present . ,present)))
+  (dolist (operation `((convert . ,convert) (candidate . ,candidate)
+                       (fetch . ,fetch) (render . ,render)
+                       (available-p . ,available-p)
+                       (present . ,present)))
     (when (and (cdr operation)
                (not (reference-explorer-source--function-designator-p
                      (cdr operation))))
       (error "Source %s has an invalid %s function" name (car operation))))
+  (unless (or (null commit) (symbolp commit) (functionp commit))
+    (error "Source %s has an invalid commit action: %S" name commit))
   (let ((source
          (reference-explorer-source--create
           :name name :title (or title (symbol-name name))
           :convert-function convert :search-function search
-          :fetch-function fetch
-          :label-function label :annotation-function annotation
-          :render-function render :available-p-function available-p
-          :present-function present)))
+          :candidate-function candidate :fetch-function fetch
+          :render-function render :preview (and preview t) :commit commit
+          :available-p-function available-p :present-function present)))
     (setf (alist-get name reference-explorer--sources) source)
     (run-hook-with-args 'reference-explorer-source-registered-hook name)
     source))
@@ -127,8 +146,8 @@ presenter for this source."
 
 (defun reference-explorer-source-search (name query context complete)
   "Search source NAME for QUERY in CONTEXT and call COMPLETE once.
-COMPLETE receives a `reference-explorer-search-outcome'.  Entries in a
-`matched' outcome are wrapped as `reference-explorer-source-result' values."
+COMPLETE receives a `reference-explorer-search-outcome'.  Source values in a
+`matched' outcome are normalized into `reference-explorer-candidate' values."
   (let ((source (reference-explorer-get-source name)))
     (if (not (reference-explorer-source-available-p name context))
         (funcall complete
@@ -147,8 +166,8 @@ COMPLETE receives a `reference-explorer-search-outcome'.  Entries in a
            (setf (reference-explorer-search-outcome-entries outcome)
                  (mapcar
                   (lambda (value)
-                    (reference-explorer-source-result-create
-                     :source name :value value))
+                    (reference-explorer-source-make-candidate
+                     name value context))
                   (reference-explorer-search-outcome-entries outcome))))
          (funcall complete outcome))))))
 
@@ -174,49 +193,129 @@ COMPLETE receives a `reference-explorer-search-outcome'.  Entries in a
         (funcall reference-explorer-source-default-present-function
                  name source-context)))))
 
-(defun reference-explorer-source-result-descriptor (result)
-  "Return the registered source descriptor for RESULT."
-  (unless (reference-explorer-source-result-p result)
-    (error "Not a reference source result: %S" result))
-  (reference-explorer-get-source
-   (reference-explorer-source-result-source result)))
-
-(defun reference-explorer-source-result-label (result)
-  "Return the visible candidate label for RESULT."
-  (let* ((source (reference-explorer-source-result-descriptor result))
-         (function (reference-explorer-source-label-function source)))
+(defun reference-explorer-source-make-candidate (name value context)
+  "Normalize source NAME's VALUE into one candidate for CONTEXT."
+  (let* ((source (reference-explorer-get-source name))
+         (function (reference-explorer-source-candidate-function source)))
     (unless function
-      (error "Source %s does not label candidate results"
-             (reference-explorer-source-name source)))
-    (funcall function (reference-explorer-source-result-value result))))
+      (error "Source %s matched entries without a candidate function" name))
+    (let ((candidate (funcall function value context)))
+      (unless (reference-explorer-candidate-p candidate)
+        (error "Source %s returned an invalid candidate: %S" name candidate))
+      (unless (and (stringp (reference-explorer-candidate-label candidate))
+                   (not (string-empty-p
+                         (reference-explorer-candidate-label candidate))))
+        (error "Source %s returned a candidate without a label" name))
+      (setf (reference-explorer-candidate-source candidate) name
+            (reference-explorer-candidate-value candidate) value
+            (reference-explorer-candidate-annotation candidate)
+            (or (reference-explorer-candidate-annotation candidate) ""))
+      candidate)))
 
-(defun reference-explorer-source-result-annotation (result &optional context)
-  "Return annotation text for RESULT in CONTEXT."
-  (let* ((source (reference-explorer-source-result-descriptor result))
-         (function (reference-explorer-source-annotation-function source)))
-    (if function
-        (or (funcall function
-                     (reference-explorer-source-result-value result) context)
-            "")
-      "")))
+(defun reference-explorer-candidate-descriptor (candidate)
+  "Return the registered source descriptor for CANDIDATE."
+  (unless (reference-explorer-candidate-p candidate)
+    (error "Not a reference candidate: %S" candidate))
+  (reference-explorer-get-source
+   (reference-explorer-candidate-source candidate)))
 
-(defun reference-explorer-source-result-fetch (result)
-  "Return the full content represented by RESULT.
+(defun reference-explorer-candidate-fetch (candidate)
+  "Return the full content represented by CANDIDATE.
 When the source has no separate fetch operation, return its entry value."
-  (let* ((source (reference-explorer-source-result-descriptor result))
+  (let* ((source (reference-explorer-candidate-descriptor candidate))
          (function (reference-explorer-source-fetch-function source))
-         (value (reference-explorer-source-result-value result)))
+         (value (reference-explorer-candidate-value candidate)))
     (if function (funcall function value) value)))
 
-(defun reference-explorer-source-result-render (result buffer-name)
-  "Render RESULT in BUFFER-NAME and return the resulting buffer."
-  (let* ((source (reference-explorer-source-result-descriptor result))
+(defun reference-explorer-candidate-render (candidate buffer-name)
+  "Lazily fetch and render CANDIDATE in BUFFER-NAME."
+  (let* ((source (reference-explorer-candidate-descriptor candidate))
          (function (reference-explorer-source-render-function source)))
     (unless function
       (error "Source %s does not render candidate results"
              (reference-explorer-source-name source)))
     (funcall function
-             (reference-explorer-source-result-fetch result) buffer-name)))
+             (reference-explorer-candidate-fetch candidate) buffer-name)))
+
+(defun reference-explorer-source-preview-p (name)
+  "Return effective preview policy for source NAME."
+  (let ((override (assq name reference-explorer-source-preview-overrides)))
+    (if override
+        (and (cdr override) t)
+      (reference-explorer-source-preview
+       (reference-explorer-get-source name)))))
+
+(defun reference-explorer-register-commit-action (name function)
+  "Register FUNCTION as symbolic candidate commit action NAME."
+  (unless (and (symbolp name)
+               (reference-explorer-source--function-designator-p function))
+    (error "Invalid commit action: %S %S" name function))
+  (setf (alist-get name reference-explorer-commit-actions) function)
+  name)
+
+(defun reference-explorer-candidate-commit (candidate context)
+  "Run CANDIDATE's source-declared commit action in CONTEXT."
+  (let* ((source (reference-explorer-candidate-descriptor candidate))
+         (action (reference-explorer-source-commit source))
+         (function
+          (cond
+           ((null action) nil)
+           ((functionp action) action)
+           ((symbolp action)
+            (or (alist-get action reference-explorer-commit-actions)
+                (error "Commit action is not registered: %s" action)))
+           (t (error "Invalid commit action: %S" action)))))
+    (when function
+      (funcall function candidate context))))
+
+(defun reference-explorer--preserve-replacement-case (replacement original)
+  "Adjust REPLACEMENT to the simple letter case used by ORIGINAL."
+  (cond
+   ((and (string-match-p "[[:alpha:]]" original)
+         (equal original (upcase original)))
+    (upcase replacement))
+   ((and (> (length original) 0)
+         (equal original (capitalize original)))
+    (capitalize replacement))
+   (t replacement)))
+
+(defun reference-explorer-commit-replace (candidate context)
+  "Replace CONTEXT's captured selection with CANDIDATE's commit text."
+  (let* ((beginning
+          (and context
+               (reference-explorer-context-selection-beginning context)))
+         (end
+          (and context
+               (reference-explorer-context-selection-end context)))
+         (original
+          (and context
+               (reference-explorer-context-selection-text context)))
+         (replacement
+          (or (reference-explorer-candidate-commit-text candidate)
+              (reference-explorer-candidate-label candidate)))
+         (buffer (and (markerp beginning) (marker-buffer beginning))))
+    (unless (and (stringp replacement) (buffer-live-p buffer)
+                 (markerp end) (marker-position beginning)
+                 (marker-position end)
+                 (eq (marker-buffer end) buffer))
+      (user-error "The replacement target is no longer available"))
+    (with-current-buffer buffer
+      (let ((start (marker-position beginning))
+            (finish (marker-position end)))
+        (unless (equal original
+                       (buffer-substring-no-properties start finish))
+          (user-error "The original text changed; refusing to replace it"))
+        (let ((replacement
+               (reference-explorer--preserve-replacement-case
+                replacement original)))
+          (atomic-change-group
+            (goto-char start)
+            (delete-region start finish)
+            (insert replacement))
+          (message "Replaced “%s” with “%s”" original replacement))))))
+
+(reference-explorer-register-commit-action
+ 'replace #'reference-explorer-commit-replace)
 
 (provide 'reference-explorer-source)
 ;;; reference-explorer-source.el ends here
