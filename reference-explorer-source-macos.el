@@ -1,4 +1,4 @@
-;;; reference-explorer-provider-macos.el --- macOS reference provider -*- lexical-binding: t -*-
+;;; reference-explorer-source-macos.el --- macOS Dictionary source -*- lexical-binding: t -*-
 
 ;;; Commentary:
 
@@ -8,57 +8,57 @@
 
 ;;; Code:
 
-(require 'reference-explorer-core)
+(require 'reference-explorer-source)
 (require 'subr-x)
 
-(defcustom reference-explorer-provider-macos-module-file
+(defcustom reference-explorer-source-macos-module-file
   (expand-file-name
-   (concat "site-lisp/reference-explorer/reference-explorer-provider-macos-module"
+   (concat "site-lisp/reference-explorer/reference-explorer-source-macos-module"
            (if (boundp 'module-file-suffix) module-file-suffix ".dylib"))
    user-emacs-directory)
   "Native module that presents the macOS Dictionary definition window."
   :type 'file
   :group 'reference-explorer)
 
-(declare-function reference-explorer-provider-macos-show-definition
-                  "reference-explorer-provider-macos-module"
+(declare-function reference-explorer-source-macos-show-definition
+                  "reference-explorer-source-macos-module"
                   (text screen-x screen-y))
-(declare-function reference-explorer-provider-macos-show-definition-with-font
-                  "reference-explorer-provider-macos-module"
+(declare-function reference-explorer-source-macos-show-definition-with-font
+                  "reference-explorer-source-macos-module"
                   (text screen-x screen-y font-name font-weight font-size))
-(declare-function reference-explorer-provider-macos-show-definition-at-offset
-                  "reference-explorer-provider-macos-module"
+(declare-function reference-explorer-source-macos-show-definition-at-offset
+                  "reference-explorer-source-macos-module"
                   (text utf8-byte-offset screen-x screen-y))
-(declare-function reference-explorer-provider-macos-selection-at-offset
-                  "reference-explorer-provider-macos-module"
+(declare-function reference-explorer-source-macos-selection-at-offset
+                  "reference-explorer-source-macos-module"
                   (text utf8-byte-offset))
-(declare-function reference-explorer-provider-macos-hide-definition
-                  "reference-explorer-provider-macos-module" ())
+(declare-function reference-explorer-source-macos-hide-definition
+                  "reference-explorer-source-macos-module" ())
 
-(defun reference-explorer-provider-macos--module-loaded-p ()
+(defun reference-explorer-source-macos--module-loaded-p ()
   "Return non-nil when all required native module functions are defined."
-  (and (fboundp 'reference-explorer-provider-macos-show-definition-with-font)
-       (fboundp 'reference-explorer-provider-macos-selection-at-offset)
-       (fboundp 'reference-explorer-provider-macos-hide-definition)))
+  (and (fboundp 'reference-explorer-source-macos-show-definition-with-font)
+       (fboundp 'reference-explorer-source-macos-selection-at-offset)
+       (fboundp 'reference-explorer-source-macos-hide-definition)))
 
-(defun reference-explorer-provider-macos--load-module ()
+(defun reference-explorer-source-macos--load-module ()
   "Load the native Dictionary module and return non-nil on success."
-  (or (reference-explorer-provider-macos--module-loaded-p)
+  (or (reference-explorer-source-macos--module-loaded-p)
       (and (eq system-type 'darwin)
            (display-graphic-p)
            (fboundp 'module-load)
-           (file-readable-p reference-explorer-provider-macos-module-file)
+           (file-readable-p reference-explorer-source-macos-module-file)
            (condition-case nil
                (progn
-                 (module-load reference-explorer-provider-macos-module-file)
-                 (reference-explorer-provider-macos--module-loaded-p))
+                 (module-load reference-explorer-source-macos-module-file)
+                 (reference-explorer-source-macos--module-loaded-p))
              (error nil)))))
 
-(defun reference-explorer-provider-macos-available-p ()
+(defun reference-explorer-source-macos-available-p (&optional _context)
   "Return non-nil when the system Dictionary popup can be displayed."
-  (reference-explorer-provider-macos--load-module))
+  (reference-explorer-source-macos--load-module))
 
-(defun reference-explorer-provider-macos--presentation (context)
+(defun reference-explorer-source-macos--presentation (context)
   "Return CONTEXT's screen baseline and actual font presentation.
 The result is ((X . Y) FONT-FAMILY FONT-WEIGHT FONT-SIZE)."
   (let* ((marker (reference-explorer-context-marker context))
@@ -100,14 +100,14 @@ The result is ((X . Y) FONT-FAMILY FONT-WEIGHT FONT-SIZE)."
              weight
              size)))))))
 
-(defun reference-explorer-provider-macos--screen-position (context)
+(defun reference-explorer-source-macos--screen-position (context)
   "Return CONTEXT's glyph baseline in Emacs screen pixel coordinates."
-  (car (reference-explorer-provider-macos--presentation context)))
+  (car (reference-explorer-source-macos--presentation context)))
 
-(defun reference-explorer-provider-macos--text-at-origin (context)
+(defun reference-explorer-source-macos--text-at-origin (context)
   "Return CONTEXT's logical line and UTF-8 byte offset at its origin.
 The result is (TEXT . OFFSET).  OFFSET identifies point between the UTF-8
-bytes in TEXT; the native provider converts it to the NSString index expected
+bytes in TEXT; the native module converts it to the NSString index expected
 by macOS Dictionary Services."
   (let* ((marker (reference-explorer-context-marker context))
          (buffer (and (markerp marker) (marker-buffer marker))))
@@ -124,18 +124,18 @@ by macOS Dictionary Services."
                (string-bytes
                 (buffer-substring-no-properties start (point)))))))))))
 
-(defun reference-explorer-provider-macos--character-offset (text utf8-byte-offset)
+(defun reference-explorer-source-macos--character-offset (text utf8-byte-offset)
   "Convert UTF8-BYTE-OFFSET in TEXT to an Emacs character offset."
   (length
    (decode-coding-string
     (substring (encode-coding-string text 'utf-8) 0 utf8-byte-offset)
     'utf-8)))
 
-(defun reference-explorer-provider-macos--automatic-context (context)
+(defun reference-explorer-source-macos--automatic-context (context)
   "Return CONTEXT refined to the Dictionary term and its visible beginning."
-  (when-let* ((origin (reference-explorer-provider-macos--text-at-origin context))
+  (when-let* ((origin (reference-explorer-source-macos--text-at-origin context))
               (selection
-               (reference-explorer-provider-macos-selection-at-offset
+               (reference-explorer-source-macos-selection-at-offset
                 (car origin) (cdr origin)))
               (term (nth 0 selection))
               (start-byte (nth 1 selection))
@@ -150,55 +150,63 @@ by macOS Dictionary Services."
             (setf (reference-explorer-context-marker refined)
                   (copy-marker
                    (+ (line-beginning-position)
-                      (reference-explorer-provider-macos--character-offset
+                      (reference-explorer-source-macos--character-offset
                        (car origin) start-byte)))))))
       (setf (reference-explorer-context-query refined) term
             (reference-explorer-context-automatic refined) nil)
       refined)))
 
-(defun reference-explorer-provider-macos--dismiss-before-command ()
+(defun reference-explorer-source-macos--dismiss-before-command ()
   "Dismiss the current Dictionary popup before passing through a command."
   (remove-hook 'pre-command-hook
-               #'reference-explorer-provider-macos--dismiss-before-command)
-  (when (fboundp 'reference-explorer-provider-macos-hide-definition)
-    (ignore-errors (reference-explorer-provider-macos-hide-definition))))
+               #'reference-explorer-source-macos--dismiss-before-command)
+  (when (fboundp 'reference-explorer-source-macos-hide-definition)
+    (ignore-errors (reference-explorer-source-macos-hide-definition))))
 
-(defun reference-explorer-provider-macos--arm-dismissal ()
+(defun reference-explorer-source-macos--arm-dismissal ()
   "Arrange for the current Dictionary popup to close on the next command."
   (remove-hook 'pre-command-hook
-               #'reference-explorer-provider-macos--dismiss-before-command)
+               #'reference-explorer-source-macos--dismiss-before-command)
   (add-hook 'pre-command-hook
-            #'reference-explorer-provider-macos--dismiss-before-command))
+            #'reference-explorer-source-macos--dismiss-before-command))
 
-(defun reference-explorer-provider-macos-display (context)
+(defun reference-explorer-source-macos-display (context)
   "Display CONTEXT's query in the macOS system Dictionary popup."
-  (unless (reference-explorer-provider-macos--load-module)
-    (signal 'reference-explorer-provider-unavailable
+  (unless (reference-explorer-source-macos--load-module)
+    (signal 'reference-explorer-source-unavailable
             '("macOS Dictionary module is unavailable")))
   (let* ((display-context
           (if (reference-explorer-context-automatic context)
-              (reference-explorer-provider-macos--automatic-context context)
+              (reference-explorer-source-macos--automatic-context context)
             context))
          (presentation
           (and display-context
-               (reference-explorer-provider-macos--presentation display-context))))
+               (reference-explorer-source-macos--presentation display-context))))
     (unless presentation
-      (signal 'reference-explorer-provider-unavailable
+      (signal 'reference-explorer-source-unavailable
               '("Reference point is not visible in its source window")))
     (pcase-let
         ((`((,x . ,y) ,font-family ,font-weight ,font-size) presentation))
-      (unless (reference-explorer-provider-macos-show-definition-with-font
+      (unless (reference-explorer-source-macos-show-definition-with-font
                (reference-explorer-context-query display-context)
                x y font-family font-weight font-size)
-        (signal 'reference-explorer-provider-unavailable
+        (signal 'reference-explorer-source-unavailable
                 '("macOS Dictionary could not display its definition window"))))
-    (reference-explorer-provider-macos--arm-dismissal)
+    (reference-explorer-source-macos--arm-dismissal)
     t))
 
-(reference-explorer-register-provider
- 'macos-dictionary
- #'reference-explorer-provider-macos-display
- #'reference-explorer-provider-macos-available-p)
+(defun reference-explorer-source-macos-search (_query context complete)
+  "Display CONTEXT with Dictionary Services and call COMPLETE."
+  (reference-explorer-source-macos-display context)
+  (funcall complete
+           (reference-explorer-search-outcome-create
+            :status 'delegated :value 'macos-dictionary)))
 
-(provide 'reference-explorer-provider-macos)
-;;; reference-explorer-provider-macos.el ends here
+(reference-explorer-register-source
+ 'macos-dictionary
+ :title "macOS Dictionary"
+ :search #'reference-explorer-source-macos-search
+ :available-p #'reference-explorer-source-macos-available-p)
+
+(provide 'reference-explorer-source-macos)
+;;; reference-explorer-source-macos.el ends here

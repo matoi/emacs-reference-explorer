@@ -1,11 +1,11 @@
-;;; reference-explorer-core.el --- Provider-based reference lookup -*- lexical-binding: t -*-
+;;; reference-explorer-core.el --- Reference query context and dispatch -*- lexical-binding: t -*-
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
 
-;; Select a reference provider from the current editing context.  Providers
-;; own retrieval and presentation; this core owns query context, dispatch, and
-;; configurable fallback.
+;; Capture a phrase from the current editing context and dispatch it to an
+;; ordered chain of registered reference sources.  Source implementations own
+;; query conversion, retrieval, and optional presentation.
 
 ;;; Code:
 
@@ -18,22 +18,23 @@
   "Explore local and external reference sources."
   :group 'applications)
 
-(define-error 'reference-explorer-provider-unavailable
-  "Reference provider is unavailable")
+(define-error 'reference-explorer-source-unavailable
+  "Reference source is unavailable")
 
 (cl-defstruct (reference-explorer-context
                (:constructor reference-explorer-context-create))
-  "A query and its originating Emacs location."
+  "A selected phrase, source query, and originating Emacs location."
+  phrase
   query
   marker
   window
   automatic)
 
-(defcustom reference-explorer-query-function
-  #'reference-explorer-default-query-at-point
-  "Function returning the reference query at point.
+(defcustom reference-explorer-phrase-selector-function
+  #'reference-explorer-default-phrase-at-point
+  "Function selecting a reference phrase at point.
 The function is called without arguments after an active region has already
-been considered."
+been considered.  Source-specific conversion happens after this selection."
   :type 'function
   :group 'reference-explorer)
 
@@ -45,57 +46,57 @@ as the display anchor."
   :type 'function
   :group 'reference-explorer)
 
-(defcustom reference-explorer-provider-rules
+(defcustom reference-explorer-source-rules
   (if (eq system-type 'darwin)
       '((t . (docset macos-dictionary lookup)))
     '((t . (lookup))))
-  "Ordered provider chains selected by major-mode ancestry.
-Each entry is (MODE . PROVIDERS).  MODE is t or a major mode accepted by
-`derived-mode-p'.  The first matching entry supplies the complete provider
-chain.  Put a catch-all t entry last to define the default chain.  The package
-default tries docset, macOS Dictionary, then Lookup on macOS, and Lookup on
-other systems.  A provider later in a chain is tried only when an earlier
-provider is unavailable and `unavailable' is enabled in
-`reference-explorer-fallback-conditions'."
+  "Ordered source chains selected by major-mode ancestry.
+Each entry is (MODE . SOURCES).  MODE is t or a major mode accepted by
+`derived-mode-p'.  The first matching entry supplies the complete source
+chain.  Put a catch-all t entry last to define the default chain.  A later
+source is tried only when an earlier source is unavailable and `unavailable'
+is enabled in `reference-explorer-fallback-conditions'."
   :type '(repeat
           (cons (choice (const :tag "Every mode" t) symbol)
                 (repeat symbol)))
   :group 'reference-explorer)
 
 (defcustom reference-explorer-fallback-conditions '(unavailable)
-  "Conditions under which dispatch may try the next provider.
+  "Conditions under which dispatch may try the next source.
 `unavailable' covers a missing executable, module, data set, or display.
-`error' additionally permits fallback after any provider error.  An empty
-list disables fallback.  A successful search with no matches never falls
-through implicitly."
+`error' additionally permits fallback after any source error.  An empty list
+disables fallback.  A completed search with no matches never falls through
+implicitly."
   :type '(set (const unavailable) (const error))
   :group 'reference-explorer)
 
-(defvar reference-explorer--providers nil
-  "Registered providers as (NAME ACTION AVAILABLE-P).")
+(declare-function reference-explorer-source-names "reference-explorer-source" ())
+(declare-function reference-explorer-run-source
+                  "reference-explorer-source" (name context))
 
-(defun reference-explorer-default-query-at-point ()
-  "Return a plain word at point for reference lookup."
+(defun reference-explorer-default-phrase-at-point ()
+  "Return a plain word at point as a reference phrase."
   (when-let ((word (thing-at-point 'word t)))
     (string-trim word)))
 
-(defun reference-explorer-query-at-point ()
-  "Return the active region or configured textual query at point."
-  (let ((query
+(defun reference-explorer-phrase-at-point ()
+  "Return the active region or configured phrase at point."
+  (let ((phrase
          (if (use-region-p)
              (buffer-substring-no-properties
               (region-beginning) (region-end))
-           (funcall reference-explorer-query-function))))
-    (and query
-         (let ((trimmed (string-trim (substring-no-properties query))))
+           (funcall reference-explorer-phrase-selector-function))))
+    (and phrase
+         (let ((trimmed (string-trim (substring-no-properties phrase))))
            (unless (string-empty-p trimmed) trimmed)))))
 
 (defun reference-explorer-context-at-point ()
-  "Capture the reference query and current displayed location."
+  "Capture the reference phrase and current displayed location."
   (let ((region-active (use-region-p)))
-    (when-let ((query (reference-explorer-query-at-point)))
+    (when-let ((phrase (reference-explorer-phrase-at-point)))
       (reference-explorer-context-create
-       :query query
+       :phrase phrase
+       :query phrase
        :marker (copy-marker
                 (if region-active
                     (region-beginning)
@@ -103,31 +104,8 @@ through implicitly."
        :window (selected-window)
        :automatic (not region-active)))))
 
-(defun reference-explorer-register-provider (name action &optional available-p)
-  "Register provider NAME using ACTION and optional AVAILABLE-P predicate.
-ACTION receives a `reference-explorer-context'."
-  (setf (alist-get name reference-explorer--providers)
-        (list action available-p)))
-
-(defun reference-explorer-unregister-provider (name)
-  "Unregister provider NAME and return non-nil when it existed."
-  (when (assq name reference-explorer--providers)
-    (setq reference-explorer--providers
-          (assq-delete-all name reference-explorer--providers))
-    t))
-
-(defun reference-explorer-provider-names ()
-  "Return registered reference provider names."
-  (mapcar #'car reference-explorer--providers))
-
-(defun reference-explorer--provider (name)
-  "Return registered provider NAME or signal an unavailable error."
-  (or (alist-get name reference-explorer--providers)
-      (signal 'reference-explorer-provider-unavailable
-              (list (format "Provider is not registered: %s" name)))))
-
-(defun reference-explorer--providers-for-context (context)
-  "Return the configured provider chain for CONTEXT's major mode."
+(defun reference-explorer--sources-for-context (context)
+  "Return the configured source chain for CONTEXT's major mode."
   (let* ((marker (reference-explorer-context-marker context))
          (buffer (and (markerp marker) (marker-buffer marker))))
     (when buffer
@@ -137,66 +115,57 @@ ACTION receives a `reference-explorer-context'."
           (lambda (entry)
             (or (eq (car entry) t)
                 (derived-mode-p (car entry))))
-          reference-explorer-provider-rules))))))
+          reference-explorer-source-rules))))))
 
-(defun reference-explorer-run-provider (name context)
-  "Run provider NAME with reference CONTEXT without fallback."
-  (pcase-let ((`(,action ,available-p)
-               (reference-explorer--provider name)))
-    (when (and available-p (not (funcall available-p)))
-      (signal 'reference-explorer-provider-unavailable
-              (list (format "Provider is unavailable: %s" name))))
-    (funcall action context)))
-
-(defun reference-explorer--dispatch (providers context)
-  "Run the first usable member of PROVIDERS with CONTEXT."
+(defun reference-explorer--dispatch (sources context)
+  "Run the first usable member of SOURCES with CONTEXT."
   (let (failures result completed)
-    (while (and providers (not completed))
-      (let ((name (pop providers)))
+    (while (and sources (not completed))
+      (let ((name (pop sources)))
         (condition-case error-data
-            (setq result (reference-explorer-run-provider name context)
+            (setq result (reference-explorer-run-source name context)
                   completed t)
-          (reference-explorer-provider-unavailable
+          (reference-explorer-source-unavailable
            (push (error-message-string error-data) failures)
-           (unless (and providers
+           (unless (and sources
                         (memq 'unavailable
                               reference-explorer-fallback-conditions))
              (signal (car error-data) (cdr error-data))))
           (error
            (push (error-message-string error-data) failures)
-           (unless (and providers
+           (unless (and sources
                         (memq 'error reference-explorer-fallback-conditions))
              (signal (car error-data) (cdr error-data)))))))
     (if completed
         result
-      (user-error "No reference provider succeeded%s"
+      (user-error "No reference source succeeded%s"
                   (if failures
                       (format ": %s" (string-join (nreverse failures) "; "))
                     "")))))
 
 (defun reference-explorer-run-context (context)
   "Dispatch reference CONTEXT according to its originating major mode."
-  (let ((providers (reference-explorer--providers-for-context context)))
-    (unless providers
-      (user-error "No reference providers configured for this context"))
-    (reference-explorer--dispatch providers context)))
+  (let ((sources (reference-explorer--sources-for-context context)))
+    (unless sources
+      (user-error "No reference sources configured for this context"))
+    (reference-explorer--dispatch sources context)))
 
 ;;;###autoload
-(defun reference-explorer-at-point (&optional choose-provider)
-  "Open the configured reference for the region or object at point.
-With prefix argument CHOOSE-PROVIDER, choose one registered provider and do
-not use fallback."
+(defun reference-explorer-at-point (&optional choose-source)
+  "Open the configured reference for the region or phrase at point.
+With prefix argument CHOOSE-SOURCE, choose one registered source and do not
+use fallback."
   (interactive "P")
   (let ((context (reference-explorer-context-at-point)))
     (unless context
-      (user-error "No reference query at point"))
-    (if choose-provider
-        (let* ((names (reference-explorer-provider-names))
+      (user-error "No reference phrase at point"))
+    (if choose-source
+        (let* ((names (reference-explorer-source-names))
                (selected
                 (intern
-                 (completing-read "Reference provider: "
+                 (completing-read "Reference source: "
                                   (mapcar #'symbol-name names) nil t))))
-          (reference-explorer-run-provider selected context))
+          (reference-explorer-run-source selected context))
       (reference-explorer-run-context context))))
 
 (provide 'reference-explorer-core)

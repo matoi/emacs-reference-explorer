@@ -4,7 +4,7 @@
 
 ;; Optional extension of `reference-explorer-ui' for hosts that have
 ;; already configured Migemo and Orderless.  Loading this file installs a
-;; converted-mode completion style; neither the provider dispatcher nor the
+;; converted-mode completion style; neither the source dispatcher nor the
 ;; shared UI loads it automatically.
 
 ;;; Code:

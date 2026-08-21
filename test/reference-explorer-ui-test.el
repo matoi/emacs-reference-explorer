@@ -4,8 +4,8 @@
 (require 'reference-explorer-source-lookup)
 
 (ert-deftest reference-explorer-ui-keeps-monokakido-explicit-by-default ()
-  (let ((default-chain (cdr (assq t reference-explorer-provider-rules))))
-    (should (memq 'monokakido (reference-explorer-provider-names)))
+  (let ((default-chain (cdr (assq t reference-explorer-source-rules))))
+    (should (memq 'monokakido (reference-explorer-source-names)))
     (should-not (memq 'monokakido default-chain))
     (should (equal default-chain
                    (if (eq system-type 'darwin)
@@ -16,21 +16,19 @@
   (dolist (source '(lookup docset thesaurus))
     (should (memq source (reference-explorer-source-names)))))
 
-(ert-deftest reference-explorer-ui-registers-source-backed-provider ()
-  (let ((reference-explorer--sources (copy-alist reference-explorer--sources))
-        (reference-explorer--providers (copy-alist reference-explorer--providers))
-        (reference-explorer-ui--source-provider-names
-         (copy-sequence reference-explorer-ui--source-provider-names)))
+(ert-deftest reference-explorer-ui-uses-the-source-registry-directly ()
+  (let ((reference-explorer--sources (copy-alist reference-explorer--sources)))
     (reference-explorer-register-source
      'example-source
-     :search (lambda (_query _context success _failure)
-               (funcall success '("result")))
+     :search (lambda (_query _context complete)
+               (funcall complete
+                        (reference-explorer-search-outcome-create
+                         :status 'matched :entries '("result"))))
      :label #'identity
-     :render (lambda (_value _buffer-name) (current-buffer))
-     :provider t)
-    (should (memq 'example-source (reference-explorer-provider-names)))
+     :render (lambda (_value _buffer-name) (current-buffer)))
+    (should (memq 'example-source (reference-explorer-source-names)))
     (reference-explorer-unregister-source 'example-source)
-    (should-not (memq 'example-source (reference-explorer-provider-names)))))
+    (should-not (memq 'example-source (reference-explorer-source-names)))))
 
 (ert-deftest reference-explorer-ui-converts-standard-roman-readings ()
   (should (equal (reference-explorer-ui--roman-to-hiragana "kankyo")
@@ -153,7 +151,7 @@
       (should (equal (buffer-string) "a"))
       (should exited))))
 
-(ert-deftest reference-explorer-ui-quick-reference-uses-provider-order ()
+(ert-deftest reference-explorer-ui-quick-reference-uses-source-order ()
   (let ((reference-explorer-ui--quick-session
          (reference-explorer-ui--make-quick-session
           :query "query"
@@ -165,7 +163,7 @@
       (reference-explorer-ui-quick-open-reference)
       (should (equal (reference-explorer-context-query dispatched) "query")))))
 
-(ert-deftest reference-explorer-ui-consult-reference-uses-provider-order ()
+(ert-deftest reference-explorer-ui-consult-reference-uses-source-order ()
   (let ((reference-explorer-ui--consult-origin
          (reference-explorer-context-create
           :query nil
@@ -545,7 +543,7 @@
    (eq (lookup-key reference-explorer-ui-docset-embark-map (kbd "b"))
        #'reference-explorer-ui-browse-docset-candidate)))
 
-(ert-deftest reference-explorer-ui-docset-provider-opens-quick-selector ()
+(ert-deftest reference-explorer-ui-docset-source-opens-quick-selector ()
   (with-temp-buffer
     (emacs-lisp-mode)
     (insert "sample")
@@ -565,13 +563,13 @@
                 ((symbol-function 'display-graphic-p) (lambda (&rest _) t))
                 ((symbol-function 'reference-explorer-ui--quick-open-session)
                  (lambda (session) (setq opened session))))
-        (reference-explorer-ui-docset-provider-display context))
+        (reference-explorer-ui-docset-present context))
       (should (equal (reference-explorer-ui--quick-session-query opened)
                      "sample"))
       (should (equal (reference-explorer-ui--quick-session-entries opened)
                      (list result))))))
 
-(ert-deftest reference-explorer-ui-docset-provider-falls-through-when-absent ()
+(ert-deftest reference-explorer-ui-docset-source-falls-through-when-absent ()
   (with-temp-buffer
     (let ((context (reference-explorer-context-create
                     :query "sample" :marker (copy-marker (point))
@@ -579,8 +577,8 @@
       (cl-letf (((symbol-function 'reference-explorer-source-docset-for-mode)
                  (lambda (_mode) nil)))
         (should-error
-         (reference-explorer-ui-docset-provider-display context)
-         :type 'reference-explorer-provider-unavailable)))))
+         (reference-explorer-ui-docset-present context)
+         :type 'reference-explorer-source-unavailable)))))
 
 (ert-deftest reference-explorer-ui-explicit-quick-forwarding-bypasses-order ()
   (let ((reference-explorer-ui--quick-session
@@ -589,9 +587,9 @@
           :source-marker (copy-marker 1)
           :source-window (selected-window)))
         calls)
-    (cl-letf (((symbol-function 'reference-explorer-run-provider)
-               (lambda (provider context)
-                 (push (list provider
+    (cl-letf (((symbol-function 'reference-explorer-run-source)
+               (lambda (source context)
+                 (push (list source
                              (reference-explorer-context-query context))
                        calls))))
       (reference-explorer-ui-quick-macos-dictionary)
@@ -609,9 +607,9 @@
         calls)
     (cl-letf (((symbol-function 'minibuffer-contents-no-properties)
                (lambda () "edited query"))
-              ((symbol-function 'reference-explorer-run-provider)
-               (lambda (provider context)
-                 (push (list provider
+              ((symbol-function 'reference-explorer-run-source)
+               (lambda (source context)
+                 (push (list source
                              (reference-explorer-context-query context))
                        calls))))
       (reference-explorer-ui-consult-macos-dictionary)

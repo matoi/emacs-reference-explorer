@@ -318,7 +318,7 @@ Return TEXT unchanged when MODE is unavailable or cannot be initialized."
      (format
       (concat "No installed docset matches %s for %s; "
               "use M-x reference-explorer-source-docset-manager-install to add one, "
-              "or H-. will use its next provider")
+              "or H-. will use its next source")
       (string-join selectors ", ") major-mode)
      :warning)))
 
@@ -780,11 +780,15 @@ Append optional EXTRA-STYLE after the docset's own stylesheets."
     (buffer-local-value 'major-mode buffer)))
 
 (defun reference-explorer-source-docset-protocol-search
-    (query context success _failure)
-  "Search docsets for QUERY and CONTEXT, then call SUCCESS."
-  (funcall success
-           (reference-explorer-source-docset-search
-            query (reference-explorer-source-docset--context-mode context))))
+    (query context complete)
+  "Search docsets for QUERY and CONTEXT, then call COMPLETE."
+  (let ((entries
+         (reference-explorer-source-docset-search
+          query (reference-explorer-source-docset--context-mode context))))
+    (funcall complete
+             (reference-explorer-search-outcome-create
+              :status (if entries 'matched 'no-match)
+              :entries entries))))
 
 (defun reference-explorer-source-docset-protocol-annotation (result _context)
   "Return a plain annotation for docset RESULT."
@@ -809,8 +813,7 @@ Append optional EXTRA-STYLE after the docset's own stylesheets."
  :annotation #'reference-explorer-source-docset-protocol-annotation
  :render #'reference-explorer-source-docset-render
  :available-p #'reference-explorer-source-docset-protocol-available-p
- :provider t
- :provider-function 'reference-explorer-ui-docset-provider-display)
+ :present 'reference-explorer-ui-docset-present)
 
 (provide 'reference-explorer-source-docset)
 ;;; reference-explorer-source-docset.el ends here

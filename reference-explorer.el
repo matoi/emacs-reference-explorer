@@ -8,7 +8,7 @@
 ;;; Commentary:
 
 ;; Main entry point for Reference Explorer.  Requiring this feature loads the
-;; core dispatcher, shared UI, and bundled sources and providers.  Optional
+;; core dispatcher, shared UI, and bundled sources.  Optional
 ;; integrations such as Lookup and Migemo remain separate.
 
 ;;; Code:

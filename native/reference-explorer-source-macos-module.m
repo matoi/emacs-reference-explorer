@@ -370,7 +370,7 @@ emacs_module_init(struct emacs_runtime *runtime)
     "Show the macOS Dictionary definition for TEXT at SCREEN-X, SCREEN-Y.",
     NULL);
   emacs_value symbol =
-    env->intern(env, "reference-explorer-provider-macos-show-definition");
+    env->intern(env, "reference-explorer-source-macos-show-definition");
   emacs_value defalias = env->intern(env, "defalias");
   emacs_value aliasArgs[] = { symbol, function };
   env->funcall(env, defalias, 2, aliasArgs);
@@ -380,7 +380,7 @@ emacs_module_init(struct emacs_runtime *runtime)
     "Show TEXT using its source baseline, font, weight, and size.",
     NULL);
   emacs_value fontSymbol =
-    env->intern(env, "reference-explorer-provider-macos-show-definition-with-font");
+    env->intern(env, "reference-explorer-source-macos-show-definition-with-font");
   emacs_value fontAliasArgs[] = { fontSymbol, fontFunction };
   env->funcall(env, defalias, 2, fontAliasArgs);
 
@@ -389,7 +389,7 @@ emacs_module_init(struct emacs_runtime *runtime)
     "Show the macOS Dictionary term selected around UTF8-BYTE-OFFSET in TEXT.",
     NULL);
   emacs_value automaticSymbol =
-    env->intern(env, "reference-explorer-provider-macos-show-definition-at-offset");
+    env->intern(env, "reference-explorer-source-macos-show-definition-at-offset");
   emacs_value automaticAliasArgs[] = { automaticSymbol, automaticFunction };
   env->funcall(env, defalias, 2, automaticAliasArgs);
 
@@ -398,7 +398,7 @@ emacs_module_init(struct emacs_runtime *runtime)
     "Return the macOS Dictionary term around UTF8-BYTE-OFFSET in TEXT.",
     NULL);
   emacs_value termSymbol =
-    env->intern(env, "reference-explorer-provider-macos-term-at-offset");
+    env->intern(env, "reference-explorer-source-macos-term-at-offset");
   emacs_value termAliasArgs[] = { termSymbol, termFunction };
   env->funcall(env, defalias, 2, termAliasArgs);
 
@@ -407,7 +407,7 @@ emacs_module_init(struct emacs_runtime *runtime)
     "Return (TERM START-BYTE END-BYTE) selected around UTF8-BYTE-OFFSET.",
     NULL);
   emacs_value selectionSymbol =
-    env->intern(env, "reference-explorer-provider-macos-selection-at-offset");
+    env->intern(env, "reference-explorer-source-macos-selection-at-offset");
   emacs_value selectionAliasArgs[] = { selectionSymbol, selectionFunction };
   env->funcall(env, defalias, 2, selectionAliasArgs);
 
@@ -415,13 +415,13 @@ emacs_module_init(struct emacs_runtime *runtime)
     env, 0, 0, reference_explorer_macos_hide_definition,
     "Hide the system Dictionary definition displayed by this module.", NULL);
   emacs_value hideSymbol =
-    env->intern(env, "reference-explorer-provider-macos-hide-definition");
+    env->intern(env, "reference-explorer-source-macos-hide-definition");
   emacs_value hideAliasArgs[] = { hideSymbol, hideFunction };
   env->funcall(env, defalias, 2, hideAliasArgs);
 
   emacs_value provide = env->intern(env, "provide");
   emacs_value feature =
-    env->intern(env, "reference-explorer-provider-macos-module");
+    env->intern(env, "reference-explorer-source-macos-module");
   env->funcall(env, provide, 1, &feature);
   return 0;
 }

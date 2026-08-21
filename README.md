@@ -6,11 +6,10 @@ Reference Explorer is a dictionary and documentation browser for Emacs. It
 integrates Lookup for Emacs, Dash-compatible docsets, macOS Dictionary,
 Dictionaries by Monokakido, and an online thesaurus.
 
-A source implements the common search, candidate, and rendering protocol; a
-provider is a target of the reference dispatcher. A source may expose itself
-as a provider through the shared UI. Configure provider chains with
-`reference-explorer-provider-rules`. The macOS default is `docset`,
-`macos-dictionary`, then `lookup`.
+Every search integration is a source. A source may return candidates for the
+shared UI or delegate the complete search to an external application. Configure
+the dispatch order with `reference-explorer-source-rules`. The macOS default is
+`docset`, `macos-dictionary`, then `lookup`.
 
 ## Installation
 
@@ -29,28 +28,42 @@ Integrations with [Consult](https://github.com/minad/consult),
 [Vertico](https://github.com/minad/vertico), and
 [Popper](https://github.com/karthink/popper) are optional.
 
-## Sources and providers
+## Sources
 
-- Lookup for Emacs is a dictionary source and the `lookup` provider.
-- Docsets are a documentation source and the `docset` provider.
-- macOS Dictionary is the `macos-dictionary` provider.
-- Dictionaries by Monokakido is the `monokakido` provider.
-- The thesaurus is a source used by its own replacement command, not a
-  dispatcher provider.
+- `lookup`: EPWING and EBXA dictionaries through Lookup for Emacs.
+- `docset`: Dash-compatible documentation bundles.
+- `macos-dictionary`: the macOS Dictionary popup.
+- `monokakido`: Dictionaries by Monokakido through its URL scheme.
+- `thesaurus`: Power Thesaurus results used by the replacement command.
+
+All five use the same registry. A source need not appear in the default
+dispatcher rule; `monokakido` and `thesaurus` are registered but omitted by
+default.
 
 ### Adding a source
 
-Register a source with `reference-explorer-register-source`. Search functions
-receive `QUERY`, `CONTEXT`, `SUCCESS`, and `FAILURE`; calling `SUCCESS` with raw
-entries lets Reference Explorer wrap them as source-owned results. Because the
-protocol uses callbacks, the same interface supports local and asynchronous
-network searches.
+A search passes through four stages:
+
+1. A phrase selector obtains text from the buffer or region.
+2. The source's optional converter turns that phrase into its query.
+3. The source searches and reports a status-bearing outcome.
+4. A source-specific or shared presenter displays the result.
+
+Register a source with `reference-explorer-register-source`. Its search
+function receives `QUERY`, `CONTEXT`, and `COMPLETE`. It calls `COMPLETE` with
+a `reference-explorer-search-outcome` whose status is `matched`, `no-match`,
+`delegated`, `unavailable`, or `failed`. Callbacks support both local and
+asynchronous searches.
 
 ```elisp
 (require 'reference-explorer-source)
 
-(defun my-glossary-search (query _context success _failure)
-  (funcall success (my-glossary-find query)))
+(defun my-glossary-search (query _context complete)
+  (let ((entries (my-glossary-find query)))
+    (funcall complete
+             (reference-explorer-search-outcome-create
+              :status (if entries 'matched 'no-match)
+              :entries entries))))
 
 (defun my-glossary-render (entry buffer-name)
   (let ((buffer (get-buffer-create buffer-name)))
@@ -68,48 +81,52 @@ network searches.
  :label #'my-glossary-heading
  :annotation (lambda (_entry _context) "local")
  :render #'my-glossary-render
- :available-p (lambda (_context) t)
- :provider t)
+ :available-p (lambda (_context) t))
 ```
 
-With `:provider t`, the source is automatically usable in
-`reference-explorer-provider-rules` and gets the shared candidate and preview
-UI. Omit it for a source consumed by a specialized command, as the thesaurus
-is. `:provider-function` can replace only the provider presentation while the
-source still uses the common search and result protocol.
+Matched entries are wrapped as source-owned results before reaching the shared
+candidate UI. `:label` and `:annotation` describe candidates, optional `:fetch`
+retrieves one selected entry's full content, and `:render` displays it. Use
+`:convert` for source-specific query conversion and `:present` when a source
+needs its own presentation flow.
+
+A delegating source performs its external action in `:search`, reports
+`delegated`, and does not need candidate or rendering functions. The macOS and
+Monokakido sources follow this form. `delegated` means the query was handed off;
+it does not claim that the external application found a match.
 
 ### Dispatch order and fallback
 
-Each rule associates a major mode with an ordered provider chain. For one
+Each rule associates a major mode with an ordered source chain. For one
 chain in every mode, set only the catch-all rule:
 
 ```elisp
-(setq reference-explorer-provider-rules
+(setq reference-explorer-source-rules
       '((t . (docset macos-dictionary lookup))))
 ```
 
-`reference-explorer-at-point` tries providers from left to right. With a
-prefix argument it prompts for one provider instead. Put mode-specific rules
+`reference-explorer-at-point` tries sources from left to right. With a
+prefix argument it prompts for one source instead. Put mode-specific rules
 before the catch-all rule:
 
 ```elisp
-(setq reference-explorer-provider-rules
+(setq reference-explorer-source-rules
       '((emacs-lisp-mode . (docset lookup))
         (text-mode . (macos-dictionary lookup))
         (t . (lookup))))
 ```
 
 The first rule whose mode is an ancestor of the originating major mode wins.
-If no rule matches, no provider is configured, so normally keep the `t` rule
-last. By default, dispatch advances only when a provider is unavailable. To
-also continue after provider errors, use:
+If no rule matches, no source is configured, so normally keep the `t` rule
+last. By default, dispatch advances only when a source is unavailable. To
+also continue after source errors, use:
 
 ```elisp
 (setq reference-explorer-fallback-conditions '(unavailable error))
 ```
 
-An available provider that returns no matches does not fall through. Source
-ordering is source-specific and is configured in the sections below.
+An available source that completes with no matches does not fall through.
+Ordering within a source is configured in the sections below.
 
 ### Lookup for Emacs
 
@@ -195,7 +212,7 @@ scripts/manage-docsets.sh update MANIFEST
 
 ### macOS Dictionary
 
-The macOS provider uses Dictionary Services for automatic phrase selection and
+The macOS source uses Dictionary Services for automatic phrase selection and
 an anchored system popup. Build its native module after installing or updating
 Emacs:
 
@@ -211,11 +228,11 @@ with `EMACS_INCLUDE_DIR`, or the destination with
 
 [Dictionaries by Monokakido](https://www.monokakido.jp/ja/dictionaries/) is a
 dictionary application for macOS, iPhone, and iPad that manages and searches
-multiple dictionary titles. The provider opens its URL scheme. Optional
+multiple dictionary titles. The source opens its URL scheme. Optional
 settings are:
 
-- `reference-explorer-provider-monokakido-category`
-- `reference-explorer-provider-monokakido-scope`
+- `reference-explorer-source-monokakido-category`
+- `reference-explorer-source-monokakido-scope`
 
 ### Thesaurus
 
@@ -271,7 +288,7 @@ Other customizable maps are
 `reference-explorer-ui-docset-embark-map`, and
 `reference-explorer-ui-thesaurus-embark-map`.
 
-## Phrase selection
+## Phrase selection and conversion
 
 `reference-explorer-query-segment-backends` is an ordered list of pluggable
 phrase selectors. The bundled MeCab backend handles Japanese compounds, and
@@ -280,8 +297,12 @@ candidate of at least two characters while retaining longer candidates for
 expansion. Change the minimum with
 `reference-explorer-query-segment-mecab-initial-minimum-length`.
 
-Converted input uses `reference-explorer-ui-query-conversion-function`; its
-default converts romanized Japanese to hiragana. The optional
+The selected text is stored separately from the source query. A source can set
+`:convert` to normalize, stem, or otherwise transform it without changing the
+original phrase. Interactive Consult conversion remains controlled by
+`reference-explorer-ui-query-conversion-function`.
+
+Its default converts romanized Japanese to hiragana. The optional
 `reference-explorer-ui-migemo` module supplies Migemo and Orderless filtering
 when both are already configured:
 
@@ -294,8 +315,7 @@ when both are already configured:
 `reference-explorer.el` is the package entry point. Core dispatch lives in
 `reference-explorer-core.el`, the source protocol in
 `reference-explorer-source.el`, shared interaction in
-`reference-explorer-ui.el`, and integrations in the role-named `source-*` and
-`provider-*` files.
+`reference-explorer-ui.el`, and integrations in the `source-*` files.
 
 Run the test suite with:
 

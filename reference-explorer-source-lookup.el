@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; Lookup search, ranking, entry rendering, commands, and provider
+;; Lookup search, ranking, entry rendering, commands, and presentation
 ;; integration.  Its primary purpose is searching locally installed EPWING
 ;; and EBXA dictionary data through Lookup's `ndeb' agent and EBLook.  Shared
 ;; Quick, Consult, preview, and interaction UI lives in `reference-explorer-ui'.
@@ -304,7 +304,7 @@ groups are ordered by `reference-explorer-source-lookup-source-order'."
 (defun reference-explorer-source-lookup-monokakido-candidate (candidate)
   "Open the heading represented by Embark CANDIDATE in Monokakido."
   (if-let ((entry (reference-explorer-source-lookup-candidate-entry candidate)))
-      (reference-explorer-run-provider
+      (reference-explorer-run-source
        'monokakido
        (reference-explorer-context-create
         :query (reference-explorer-source-lookup--plain-entry-heading entry)
@@ -315,7 +315,7 @@ groups are ordered by `reference-explorer-source-lookup-source-order'."
 (defun reference-explorer-source-lookup-macos-dictionary-candidate (candidate)
   "Open the heading represented by Embark CANDIDATE in macOS Dictionary."
   (if-let ((entry (reference-explorer-source-lookup-candidate-entry candidate)))
-      (reference-explorer-run-provider
+      (reference-explorer-run-source
        'macos-dictionary
        (reference-explorer-context-create
         :query (reference-explorer-source-lookup--plain-entry-heading entry)
@@ -388,7 +388,7 @@ requested."
      (and region-active (cons begin end))
      (if region-active
          (buffer-substring-no-properties begin end)
-       (reference-explorer-ui-query-at-point)))))
+       (reference-explorer-ui-phrase-at-point)))))
 
 ;; Persistent Embark export
 
@@ -646,17 +646,17 @@ Contextual input always starts in literal mode."
     (reference-explorer-source-lookup--consult-loop
      (if (use-region-p)
          initial
-       (or (reference-explorer-ui-query-at-point) initial))
+       (or (reference-explorer-ui-phrase-at-point) initial))
      'literal queries)))
 
-(defun reference-explorer-source-lookup-provider-available-p ()
+(defun reference-explorer-source-lookup-available-p (&optional _context)
   "Return non-nil when Lookup is available."
   (or (fboundp 'lookup-initialize) (locate-library "lookup")))
 
-(defun reference-explorer-source-lookup-provider-display (context)
+(defun reference-explorer-source-lookup-present (context)
   "Display reference CONTEXT with quick Lookup."
-  (unless (reference-explorer-source-lookup-provider-available-p)
-    (signal 'reference-explorer-provider-unavailable
+  (unless (reference-explorer-source-lookup-available-p context)
+    (signal 'reference-explorer-source-unavailable
             '("Lookup is unavailable")))
   (reference-explorer-source-lookup-quick-lookup-query
    (reference-explorer-context-query context)
@@ -664,10 +664,13 @@ Contextual input always starts in literal mode."
    (reference-explorer-context-marker context)))
 
 (defun reference-explorer-source-lookup-protocol-search
-    (query _context success _failure)
-  "Search Lookup for QUERY, then call SUCCESS."
-  (funcall success
-           (reference-explorer-source-lookup--quick-search-entries query)))
+    (query _context complete)
+  "Search Lookup for QUERY, then call COMPLETE with its outcome."
+  (let ((entries (reference-explorer-source-lookup--quick-search-entries query)))
+    (funcall complete
+             (reference-explorer-search-outcome-create
+              :status (if entries 'matched 'no-match)
+              :entries entries))))
 
 (defun reference-explorer-source-lookup-protocol-annotation (entry _context)
   "Return the dictionary name annotating Lookup ENTRY."
@@ -694,10 +697,8 @@ Contextual input always starts in literal mode."
  :label #'reference-explorer-source-lookup--plain-entry-heading
  :annotation #'reference-explorer-source-lookup-protocol-annotation
  :render #'reference-explorer-source-lookup-render-entry
- :available-p (lambda (_context)
-                (reference-explorer-source-lookup-provider-available-p))
- :provider t
- :provider-function #'reference-explorer-source-lookup-provider-display)
+ :available-p #'reference-explorer-source-lookup-available-p
+ :present #'reference-explorer-source-lookup-present)
 
 (with-eval-after-load 'embark
   (set-keymap-parent reference-explorer-source-lookup-embark-map

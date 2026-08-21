@@ -109,7 +109,7 @@
       (should (= (length warnings) 1))
       (should (eq (caar warnings) 'reference-explorer-source-docset))
       (should (string-match-p "Ruby@3.3.\\*" (cadar warnings)))
-      (should (string-match-p "next provider" (cadar warnings))))))
+      (should (string-match-p "next source" (cadar warnings))))))
 
 (ert-deftest reference-explorer-source-docset-does-not-warn-when-selector-matches ()
   (let* ((temporary (make-temp-file "reference-explorer-source-docset-warning-" t))

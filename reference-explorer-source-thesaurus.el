@@ -256,10 +256,19 @@ FAILURE defaults to reporting a user-facing message."
                  (message "Thesaurus: %s" message)))))
 
 (defun reference-explorer-source-thesaurus-protocol-search
-    (query _context success failure)
-  "Search synonyms for QUERY, calling SUCCESS or FAILURE."
+    (query _context complete)
+  "Search synonyms for QUERY, then call COMPLETE with its outcome."
   (reference-explorer-source-thesaurus-fetch
-   query 'synonyms success failure))
+   query 'synonyms
+   (lambda (entries)
+     (funcall complete
+              (reference-explorer-search-outcome-create
+               :status (if entries 'matched 'no-match)
+               :entries entries)))
+   (lambda (message)
+     (funcall complete
+              (reference-explorer-search-outcome-create
+               :status 'failed :message message)))))
 
 (defun reference-explorer-source-thesaurus-protocol-render (result buffer-name)
   "Render thesaurus RESULT in BUFFER-NAME and return its buffer."

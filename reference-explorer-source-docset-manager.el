@@ -307,7 +307,7 @@ Call ON-SUCCESS without arguments, or ON-ERROR with the error data."
                  (reference-explorer-source-docset-manager--series-selectors version))
           (unless (gethash selector annotations)
             (push selector series)
-            ;; VERSIONS is in provider order, so the first occurrence is the
+            ;; VERSIONS is in feed order, so the first occurrence is the
             ;; version that this series selector will resolve to.
             (puthash selector (format "  series → %s" version)
                      annotations))))
@@ -374,7 +374,7 @@ Call ON-SUCCESS without arguments, or ON-ERROR with the error data."
 
 ;;;###autoload
 (defun reference-explorer-source-docset-manager-list-versions (feed)
-  "Display versions published by docset FEED in provider order."
+  "Display versions published by docset FEED in feed order."
   (interactive "sDocset feed: ")
   (let ((versions (nth 2 (reference-explorer-source-docset-manager--feed-data feed))))
     (when (called-interactively-p 'interactive)

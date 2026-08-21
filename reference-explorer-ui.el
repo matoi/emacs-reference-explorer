@@ -14,9 +14,9 @@
 (require 'reference-explorer-query-segment)
 (require 'reference-explorer-source-docset)
 (require 'reference-explorer-source-thesaurus)
-(require 'reference-explorer-provider-monokakido)
+(require 'reference-explorer-source-monokakido)
 (when (eq system-type 'darwin)
-  (require 'reference-explorer-provider-macos))
+  (require 'reference-explorer-source-macos))
 (require 'seq)
 (require 'subr-x)
 
@@ -27,7 +27,7 @@
                   "reference-explorer-source-lookup" (input))
 (declare-function reference-explorer-source-lookup-entry-source
                   "reference-explorer-source-lookup" (entry))
-(declare-function reference-explorer-source-lookup-provider-available-p
+(declare-function reference-explorer-source-lookup-available-p
                   "reference-explorer-source-lookup" ())
 (declare-function reference-explorer-source-lookup-render-entry
                   "reference-explorer-source-lookup" (entry buffer-name))
@@ -57,9 +57,9 @@
 
 
 
-(defcustom reference-explorer-ui-query-function
+(defcustom reference-explorer-ui-phrase-selector-function
   #'reference-explorer-query-segment-word-at-point
-  "Function returning the textual reference query at point."
+  "Function selecting the textual reference phrase at point."
   :type 'function
   :group 'reference-explorer-ui)
 
@@ -100,9 +100,9 @@ It receives the minibuffer input string and returns the backend query string."
   :type 'function
   :group 'reference-explorer-ui)
 
-(defun reference-explorer-ui-query-at-point ()
-  "Return the configured reference query at point."
-  (funcall reference-explorer-ui-query-function))
+(defun reference-explorer-ui-phrase-at-point ()
+  "Return the configured reference phrase at point."
+  (funcall reference-explorer-ui-phrase-selector-function))
 
 (defun reference-explorer-ui-origin-position-at-point ()
   "Return the visible origin position used to anchor reference UI."
@@ -116,8 +116,8 @@ It receives the minibuffer input string and returns the backend query string."
   "Return contextual query bounds around point."
   (funcall reference-explorer-ui-word-bound-candidates-function))
 
-(setq reference-explorer-query-function
-      #'reference-explorer-ui-query-at-point
+(setq reference-explorer-phrase-selector-function
+      #'reference-explorer-ui-phrase-at-point
       reference-explorer-origin-position-function
       #'reference-explorer-ui-origin-position-at-point)
 
@@ -318,8 +318,6 @@ The frame is clamped to the available height of its parent frame."
 (defvar reference-explorer-ui--consult-query-options nil)
 (defvar reference-explorer-ui--consult-query-index nil)
 (defvar reference-explorer-ui--quick-session nil)
-(defvar reference-explorer-ui--source-provider-names nil
-  "Sources currently exposed through automatically managed providers.")
 (defvar reference-explorer-ui--active-temporary-preview nil
   "Most recently displayed temporary reference preview.")
 (defvar reference-explorer-ui--preview-interaction nil
@@ -645,8 +643,8 @@ SHOW-DOCSET-SOURCE keeps the source name when several docsets are searched."
     ;; Candidate navigation must never contact Power Thesaurus.  Reuse the
     ;; local Lookup backend, whose own result cache also makes revisiting a
     ;; candidate inexpensive.
-    (when (and (fboundp 'reference-explorer-source-lookup-provider-available-p)
-               (reference-explorer-source-lookup-provider-available-p))
+    (when (and (fboundp 'reference-explorer-source-lookup-available-p)
+               (reference-explorer-source-lookup-available-p))
       (let ((entries
              (reference-explorer-source-lookup--quick-search-entries
               (reference-explorer-ui--candidate-label candidate))))
@@ -807,16 +805,28 @@ Highlight literal QUERY occurrences when QUERY is non-nil."
 (defun reference-explorer-ui-open-source (source context)
   "Search registered SOURCE for CONTEXT and present its results."
   (unless (reference-explorer-source-available-p source context)
-    (signal 'reference-explorer-provider-unavailable
+    (signal 'reference-explorer-source-unavailable
             (list (format "Source is unavailable: %s" source))))
   (let ((query (reference-explorer-context-query context)))
     (reference-explorer-source-search
      source query context
-     (lambda (results)
-       (cond
-        ((null results)
+     (lambda (outcome)
+       (let ((status (reference-explorer-search-outcome-status outcome))
+             (results (reference-explorer-search-outcome-entries outcome)))
+       (pcase status
+        ('no-match
          (message "%s: no matches for “%s”" source query))
-        ((display-graphic-p)
+        ('delegated nil)
+        ('unavailable
+         (signal 'reference-explorer-source-unavailable
+                 (list (or (reference-explorer-search-outcome-message outcome)
+                           (format "Source is unavailable: %s" source)))))
+        ('failed
+         (message "%s: %s" source
+                  (or (reference-explorer-search-outcome-message outcome)
+                      "search failed")))
+        ('matched
+         (if (display-graphic-p)
          (reference-explorer-ui--quick-open-session
           (reference-explorer-ui--make-quick-session
            :query query
@@ -826,36 +836,14 @@ Highlight literal QUERY occurrences when QUERY is non-nil."
            :index 0
            :source-window (reference-explorer-context-window context)
            :source-marker (reference-explorer-context-marker context)
-           :help "TAB:open  H-i:preview操作  H-q:quit")))
-        (t
-         (when-let ((result
-                     (reference-explorer-ui--read-source-result
-                      source results context)))
-           (reference-explorer-ui--display-entry result)))))
-     (lambda (message)
-       (message "%s: %s" source message)))))
+           :help "TAB:open  H-i:preview操作  H-q:quit"))
+           (when-let ((result
+                       (reference-explorer-ui--read-source-result
+                        source results context)))
+             (reference-explorer-ui--display-entry result))))))))))
 
-(defun reference-explorer-ui--register-source-provider (name)
-  "Register NAME's source-backed dispatcher provider when requested."
-  (let ((source (reference-explorer-get-source name)))
-    (if (reference-explorer-source-provider source)
-        (progn
-          (reference-explorer-register-provider
-           name
-           (or (reference-explorer-source-provider-function source)
-               (lambda (context)
-                 (reference-explorer-ui-open-source name context)))
-           (lambda ()
-             (reference-explorer-source-available-p name nil)))
-          (cl-pushnew name reference-explorer-ui--source-provider-names))
-      (reference-explorer-ui--unregister-source-provider name))))
-
-(defun reference-explorer-ui--unregister-source-provider (name)
-  "Unregister the dispatcher provider associated with source NAME."
-  (when (memq name reference-explorer-ui--source-provider-names)
-    (setq reference-explorer-ui--source-provider-names
-          (delq name reference-explorer-ui--source-provider-names))
-    (reference-explorer-unregister-provider name)))
+(setq reference-explorer-source-default-present-function
+      #'reference-explorer-ui-open-source)
 
 (defun reference-explorer-ui--face-includes-p (face value)
   "Return non-nil when face VALUE includes FACE."
@@ -2296,29 +2284,29 @@ Selection styling is applied by the renderer across the complete visual row."
      :marker (reference-explorer-ui--quick-session-source-marker session)
      :window (reference-explorer-ui--quick-session-source-window session))))
 
-(defun reference-explorer-ui--quick-run-provider (&optional provider)
-  "Open the active quick reference query through PROVIDER or configured order."
+(defun reference-explorer-ui--quick-run-source (&optional source)
+  "Open the active quick reference query through SOURCE or configured order."
   (let ((context (reference-explorer-ui--quick-context)))
     (unless context
       (user-error "No quick reference session is active"))
-    (if provider
-        (reference-explorer-run-provider provider context)
+    (if source
+        (reference-explorer-run-source source context)
       (reference-explorer-run-context context))))
 
 (defun reference-explorer-ui-quick-open-reference ()
-  "Open the active quick reference query with the configured provider chain."
+  "Open the active quick reference query with the configured source chain."
   (interactive)
-  (reference-explorer-ui--quick-run-provider))
+  (reference-explorer-ui--quick-run-source))
 
 (defun reference-explorer-ui-quick-macos-dictionary ()
   "Forward the active quick reference query to macOS Dictionary."
   (interactive)
-  (reference-explorer-ui--quick-run-provider 'macos-dictionary))
+  (reference-explorer-ui--quick-run-source 'macos-dictionary))
 
 (defun reference-explorer-ui-quick-monokakido ()
   "Forward the active quick reference query to Dictionaries by Monokakido."
   (interactive)
-  (reference-explorer-ui--quick-run-provider 'monokakido))
+  (reference-explorer-ui--quick-run-source 'monokakido))
 
 (defvar-keymap reference-explorer-ui-quick-map
   :doc "Transient keymap active during quick reference."
@@ -2436,8 +2424,8 @@ Selection styling is applied by the renderer across the complete visual row."
       (progn (kill-new term) (message "Copied thesaurus term: %s" term))
     (user-error "Thesaurus candidate data is unavailable")))
 
-(defun reference-explorer-ui--thesaurus-run-provider (candidate provider)
-  "Open thesaurus CANDIDATE through reference PROVIDER."
+(defun reference-explorer-ui--thesaurus-run-source (candidate source)
+  "Open thesaurus CANDIDATE through reference SOURCE."
   (let* ((target
           (reference-explorer-ui--thesaurus-candidate-value candidate))
          (term (reference-explorer-ui--thesaurus-term target))
@@ -2449,8 +2437,8 @@ Selection styling is applied by the renderer across the complete visual row."
                (reference-explorer-ui--thesaurus-candidate-beginning target))))
     (unless term
       (user-error "Thesaurus candidate data is unavailable"))
-    (reference-explorer-run-provider
-     provider
+    (reference-explorer-run-source
+     source
      (reference-explorer-context-create
       :query term
       :marker (if (and (markerp marker) (marker-position marker))
@@ -2463,17 +2451,17 @@ Selection styling is applied by the renderer across the complete visual row."
 (defun reference-explorer-ui-thesaurus-lookup (candidate)
   "Open thesaurus CANDIDATE with Lookup."
   (interactive)
-  (reference-explorer-ui--thesaurus-run-provider candidate 'lookup))
+  (reference-explorer-ui--thesaurus-run-source candidate 'lookup))
 
 (defun reference-explorer-ui-thesaurus-macos-dictionary (candidate)
   "Open thesaurus CANDIDATE with macOS Dictionary."
   (interactive)
-  (reference-explorer-ui--thesaurus-run-provider candidate 'macos-dictionary))
+  (reference-explorer-ui--thesaurus-run-source candidate 'macos-dictionary))
 
 (defun reference-explorer-ui-thesaurus-monokakido (candidate)
   "Open thesaurus CANDIDATE with Dictionaries by Monokakido."
   (interactive)
-  (reference-explorer-ui--thesaurus-run-provider candidate 'monokakido))
+  (reference-explorer-ui--thesaurus-run-source candidate 'monokakido))
 
 (defun reference-explorer-ui--thesaurus-consult-candidate (target id)
   "Return a Consult string for thesaurus TARGET disambiguated by ID."
@@ -2638,7 +2626,7 @@ local dictionary previews and Embark actions do not contact the online
 service."
   (interactive)
   (let* ((region-active (use-region-p))
-         (query (reference-explorer-query-at-point))
+         (query (reference-explorer-phrase-at-point))
          (bounds
           (if region-active
               (cons (region-beginning) (region-end))
@@ -2730,8 +2718,8 @@ service."
     (throw reference-explorer-ui--consult-toggle-tag
            (list 'interact preview origin-window))))
 
-(defun reference-explorer-ui--consult-run-provider (&optional provider)
-  "Open the active Consult query through PROVIDER or configured order."
+(defun reference-explorer-ui--consult-run-source (&optional source)
+  "Open the active Consult query through SOURCE or configured order."
   (unless reference-explorer-ui--consult-origin
     (user-error "No Consult reference session is active"))
   (let ((query (string-trim (minibuffer-contents-no-properties))))
@@ -2740,25 +2728,26 @@ service."
     (let ((context
            (copy-reference-explorer-context
             reference-explorer-ui--consult-origin)))
-      (setf (reference-explorer-context-query context) query)
-      (if provider
-          (reference-explorer-run-provider provider context)
+      (setf (reference-explorer-context-phrase context) query
+            (reference-explorer-context-query context) query)
+      (if source
+          (reference-explorer-run-source source context)
         (reference-explorer-run-context context)))))
 
 (defun reference-explorer-ui-consult-open-reference ()
-  "Open the active Consult query with the configured provider chain."
+  "Open the active Consult query with the configured source chain."
   (interactive)
-  (reference-explorer-ui--consult-run-provider))
+  (reference-explorer-ui--consult-run-source))
 
 (defun reference-explorer-ui-consult-macos-dictionary ()
   "Forward the active Consult query to macOS Dictionary."
   (interactive)
-  (reference-explorer-ui--consult-run-provider 'macos-dictionary))
+  (reference-explorer-ui--consult-run-source 'macos-dictionary))
 
 (defun reference-explorer-ui-consult-monokakido ()
   "Forward the active Consult query to Dictionaries by Monokakido."
   (interactive)
-  (reference-explorer-ui--consult-run-provider 'monokakido))
+  (reference-explorer-ui--consult-run-source 'monokakido))
 
 (defun reference-explorer-ui-select-candidate ()
   "Commit the selected Consult reference candidate."
@@ -2907,16 +2896,16 @@ ORIGIN-WINDOW receives focus after direct preview interaction ends."
             (cons query (reference-explorer-source-docset-search query mode)))
           queries))
 
-(defun reference-explorer-ui-docset-provider-available-p ()
+(defun reference-explorer-ui-docset-available-p ()
   "Return non-nil when Emacs has built-in SQLite support."
   (sqlite-available-p))
 
-(defun reference-explorer-ui-docset-provider-display (context)
+(defun reference-explorer-ui-docset-present (context)
   "Display docset matches for reference CONTEXT."
   (let* ((mode (reference-explorer-ui--context-major-mode context))
          (docsets (and mode (reference-explorer-source-docset-for-mode mode))))
     (unless docsets
-      (signal 'reference-explorer-provider-unavailable
+      (signal 'reference-explorer-source-unavailable
               (list (format "No installed docset is configured for %s" mode))))
     (let* ((queries (or (reference-explorer-ui--context-query-options context)
                         (list (reference-explorer-context-query context))))
@@ -2940,16 +2929,6 @@ ORIGIN-WINDOW receives focus after direct preview interaction ends."
             (reference-explorer-ui-consult-docset
              query mode source-window))
           :help "H-s/e:検索語を縮小/拡大  H-i:preview操作  M-m:Consult"))))))
-
-(add-hook 'reference-explorer-source-registered-hook
-          #'reference-explorer-ui--register-source-provider)
-(add-hook 'reference-explorer-source-unregistered-hook
-          #'reference-explorer-ui--unregister-source-provider)
-(dolist (source (reference-explorer-source-names))
-  (reference-explorer-ui--register-source-provider source))
-
-
-
 
 
 (with-eval-after-load 'savehist
