@@ -77,7 +77,7 @@ through [Lookup for Emacs](http://ikazuhiro.s206.xrea.com/staticpages/index.php/
 and [EBLook](http://green.ribbon.to/~ikazuhiro/lookup/lookup.html#EBLOOK).
 
 On macOS, install Lookup for Emacs from the
-[matoi Homebrew tap](https://github.com/matoi/homebrew-tap). The formula also
+[Homebrew tap](https://github.com/matoi/homebrew-tap). The formula also
 installs EBLook and the EB Library; install
 [MeCab](https://taku910.github.io/mecab/) for Japanese phrase selection:
 
