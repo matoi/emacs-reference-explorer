@@ -290,12 +290,19 @@ Other customizable maps are
 
 ## Phrase selection and conversion
 
-`reference-explorer-query-segment-backends` is an ordered list of pluggable
-phrase selectors. The bundled MeCab backend handles Japanese compounds, and
-the Emacs backend is the fallback. MeCab initially selects the shortest
+`reference-explorer-phrase-segmenters` is an ordered list of pluggable
+segmenter functions. Each receives a
+`reference-explorer-phrase-segmenter-context` and returns candidates plus its
+preferred initial candidate in a `reference-explorer-phrase-segmenter-result`.
+The bundled MeCab segmenter handles Japanese compounds, and the Emacs
+segmenter is the fallback. MeCab initially selects the shortest
 candidate of at least two characters while retaining longer candidates for
 expansion. Change the minimum with
-`reference-explorer-query-segment-mecab-initial-minimum-length`.
+`reference-explorer-phrase-segmenter-mecab-initial-minimum-length`.
+
+Mode-specific context adapters are independently pluggable through
+`reference-explorer-phrase-segmenter-context-functions`. The bundled Org
+adapter restricts segmentation to a link's visible description.
 
 The selected text is stored separately from the source query. A source can set
 `:convert` to normalize, stem, or otherwise transform it without changing the
@@ -315,7 +322,9 @@ when both are already configured:
 `reference-explorer.el` is the package entry point. Core dispatch lives in
 `reference-explorer-core.el`, the source protocol in
 `reference-explorer-source.el`, shared interaction in
-`reference-explorer-ui.el`, and integrations in the `source-*` files.
+`reference-explorer-ui.el`, phrase selection in the
+`reference-explorer-phrase-segmenter*.el` files, and integrations in the
+`source-*` files.
 
 Run the test suite with:
 

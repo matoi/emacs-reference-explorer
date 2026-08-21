@@ -11,7 +11,10 @@
 (require 'cl-lib)
 (require 'reference-explorer-core)
 (require 'reference-explorer-source)
-(require 'reference-explorer-query-segment)
+(require 'reference-explorer-phrase-segmenter)
+(require 'reference-explorer-phrase-segmenter-emacs)
+(require 'reference-explorer-phrase-segmenter-mecab)
+(require 'reference-explorer-phrase-segmenter-org)
 (require 'reference-explorer-source-docset)
 (require 'reference-explorer-source-thesaurus)
 (require 'reference-explorer-source-monokakido)
@@ -58,26 +61,26 @@
 
 
 (defcustom reference-explorer-ui-phrase-selector-function
-  #'reference-explorer-query-segment-word-at-point
+  #'reference-explorer-phrase-segmenter-at-point
   "Function selecting the textual reference phrase at point."
   :type 'function
   :group 'reference-explorer-ui)
 
 (defcustom reference-explorer-ui-origin-position-function
-  #'reference-explorer-query-segment-visible-position-at-point
+  #'reference-explorer-phrase-segmenter-visible-position-at-point
   "Function returning the visible buffer position used to anchor reference UI."
   :type 'function
   :group 'reference-explorer-ui)
 
-(defcustom reference-explorer-ui-word-candidates-function
-  #'reference-explorer-query-segment-word-candidates-at-point
-  "Function returning contextual query candidates around point."
+(defcustom reference-explorer-ui-phrase-candidates-function
+  #'reference-explorer-phrase-segmenter-candidates-at-point
+  "Function returning contextual phrase candidates around point."
   :type 'function
   :group 'reference-explorer-ui)
 
-(defcustom reference-explorer-ui-word-bound-candidates-function
-  #'reference-explorer-query-segment-word-bound-candidates-at-point
-  "Function returning contextual query bounds around point."
+(defcustom reference-explorer-ui-phrase-candidate-bounds-function
+  #'reference-explorer-phrase-segmenter-candidate-bounds-at-point
+  "Function returning contextual phrase bounds around point."
   :type 'function
   :group 'reference-explorer-ui)
 
@@ -108,13 +111,13 @@ It receives the minibuffer input string and returns the backend query string."
   "Return the visible origin position used to anchor reference UI."
   (funcall reference-explorer-ui-origin-position-function))
 
-(defun reference-explorer-ui-word-candidates-at-point ()
-  "Return contextual query candidates around point."
-  (funcall reference-explorer-ui-word-candidates-function))
+(defun reference-explorer-ui-phrase-candidates-at-point ()
+  "Return contextual phrase candidates around point."
+  (funcall reference-explorer-ui-phrase-candidates-function))
 
-(defun reference-explorer-ui-word-bound-candidates-at-point ()
-  "Return contextual query bounds around point."
-  (funcall reference-explorer-ui-word-bound-candidates-function))
+(defun reference-explorer-ui-phrase-candidate-bounds-at-point ()
+  "Return contextual phrase bounds around point."
+  (funcall reference-explorer-ui-phrase-candidate-bounds-function))
 
 (setq reference-explorer-phrase-selector-function
       #'reference-explorer-ui-phrase-at-point
@@ -508,7 +511,7 @@ omitted so moving through this list always has clear expand/shrink semantics."
         queries)
     (dolist (candidate
              (delete-dups
-              (reference-explorer-ui-word-candidates-at-point)))
+              (reference-explorer-ui-phrase-candidates-at-point)))
       (let ((length (length candidate)))
         (when (and (not (string-empty-p (string-trim candidate)))
                    (< length maximum))
@@ -1893,7 +1896,7 @@ Selection styling is applied by the renderer across the complete visual row."
                 (equal query
                        (buffer-substring-no-properties
                         (car bounds) (cdr bounds))))
-              (reference-explorer-ui-word-bound-candidates-at-point))
+              (reference-explorer-ui-phrase-candidate-bounds-at-point))
              (let ((origin (point))
                    (limit (line-end-position))
                    found)
@@ -2583,7 +2586,7 @@ ORIGIN-WINDOW receives focus when an interactive preview is closed."
     (lambda (bounds)
       (equal query
              (buffer-substring-no-properties (car bounds) (cdr bounds))))
-    (reference-explorer-ui-word-bound-candidates-at-point))
+    (reference-explorer-ui-phrase-candidate-bounds-at-point))
    (bounds-of-thing-at-point 'word)))
 
 (defun reference-explorer-ui--thesaurus-search
@@ -2845,7 +2848,7 @@ service."
                     (lambda (bounds)
                       (buffer-substring-no-properties
                        (car bounds) (cdr bounds)))
-                    (reference-explorer-ui-word-bound-candidates-at-point))))
+                    (reference-explorer-ui-phrase-candidate-bounds-at-point))))
               (cons query (delete query queries)))))))))
 
 (defun reference-explorer-ui--consult-docset-read (initial mode)

@@ -244,7 +244,7 @@
            (reference-explorer-ui--make-quick-session
             :query "alpha"
             :source-marker (copy-marker 3))))
-      (let ((reference-explorer-ui-word-bound-candidates-function
+      (let ((reference-explorer-ui-phrase-candidate-bounds-function
              (lambda () '((1 . 6)))))
         (reference-explorer-ui--quick-highlight-source session))
       (let ((overlay
@@ -1294,7 +1294,7 @@
       (should (equal (nreverse methods) '(exact prefix))))))
 
 (ert-deftest reference-explorer-ui-quick-query-candidates-strictly-shrink ()
-  (let ((reference-explorer-ui-word-candidates-function
+  (let ((reference-explorer-ui-phrase-candidates-function
          (lambda ()
            '("公爵夫人" "公爵夫" "爵夫人" "公爵" "爵夫" "公"))))
     (should (equal (reference-explorer-ui--quick-query-candidates-at-point)
