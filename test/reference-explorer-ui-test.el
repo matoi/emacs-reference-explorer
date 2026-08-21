@@ -5,21 +5,8 @@
 
 (ert-deftest reference-explorer-ui-keeps-monokakido-explicit-by-default ()
   (should (memq 'monokakido (reference-explorer-provider-names)))
-  (should-not (memq 'monokakido reference-explorer-ui-provider-order))
-  (should (eq (car reference-explorer-ui-provider-order) 'docset)))
-
-(ert-deftest reference-explorer-ui-provider-order-customization-is-live ()
-  (let ((original reference-explorer-ui-provider-order))
-    (unwind-protect
-        (progn
-          (reference-explorer-ui--set-provider-order
-           'reference-explorer-ui-provider-order
-           '(monokakido macos-dictionary lookup))
-          (should
-           (equal reference-explorer-provider-rules
-                  '((t . (monokakido macos-dictionary lookup))))))
-      (reference-explorer-ui--set-provider-order
-       'reference-explorer-ui-provider-order original))))
+  (should-not (memq 'monokakido reference-explorer-provider-order))
+  (should (eq (car reference-explorer-provider-order) 'docset)))
 
 (ert-deftest reference-explorer-ui-converts-standard-roman-readings ()
   (should (equal (reference-explorer-ui--roman-to-hiragana "kankyo")

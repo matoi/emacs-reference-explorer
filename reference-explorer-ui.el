@@ -115,31 +115,10 @@ It receives the minibuffer input string and returns the backend query string."
   "Return contextual query bounds around point."
   (funcall reference-explorer-ui-word-bound-candidates-function))
 
-(defun reference-explorer-ui--set-provider-order (symbol value)
-  "Set customization SYMBOL to VALUE and update Reference Explorer rules."
-  (set-default symbol value)
-  (setq reference-explorer-provider-rules `((t . ,value))))
-
-(defcustom reference-explorer-ui-provider-order
-  (if (eq system-type 'darwin)
-      '(docset macos-dictionary lookup)
-    '(lookup))
-  "Provider order used by `reference-explorer-at-point'.
-The default macOS chain searches a docset configured for the originating
-major mode, then uses the system Dictionary popup, then Lookup.  Adding
-`monokakido' at the front makes the global H-. command open Dictionaries by
-Monokakido first.  A provider not listed here remains available to explicit
-commands and actions."
-  :type '(repeat symbol)
-  :set #'reference-explorer-ui--set-provider-order
-  :group 'reference-explorer-ui)
-
 (setq reference-explorer-query-function
       #'reference-explorer-ui-query-at-point
       reference-explorer-origin-position-function
-      #'reference-explorer-ui-origin-position-at-point
-      reference-explorer-provider-rules
-      `((t . ,reference-explorer-ui-provider-order)))
+      #'reference-explorer-ui-origin-position-at-point)
 
 (defcustom reference-explorer-ui-content-font-family nil
   "Font family used for reference content in graphical sessions.
