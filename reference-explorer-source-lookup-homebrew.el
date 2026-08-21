@@ -8,7 +8,7 @@
 
 ;;; Code:
 
-(require 'reference-explorer)
+(require 'reference-explorer-core)
 (require 'seq)
 
 (defcustom reference-explorer-source-lookup-homebrew-prefix nil

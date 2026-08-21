@@ -9,7 +9,7 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'reference-explorer)
+(require 'reference-explorer-core)
 (require 'reference-explorer-query-segment)
 (require 'reference-explorer-source-docset)
 (require 'reference-explorer-source-thesaurus)

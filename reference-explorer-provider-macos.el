@@ -8,7 +8,7 @@
 
 ;;; Code:
 
-(require 'reference-explorer)
+(require 'reference-explorer-core)
 (require 'subr-x)
 
 (defcustom reference-explorer-provider-macos-module-file

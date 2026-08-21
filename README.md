@@ -20,7 +20,7 @@ Install with Emacs 29 or later through `package-vc`:
  '(reference-explorer
    :url "https://github.com/matoi/emacs-reference-explorer"
    :main-file "reference-explorer.el"))
-(require 'reference-explorer-ui)
+(require 'reference-explorer)
 ```
 
 Integrations with [Consult](https://github.com/minad/consult),
@@ -76,9 +76,16 @@ This optional source searches locally installed EPWING and EBXA dictionaries
 through [Lookup for Emacs](http://ikazuhiro.s206.xrea.com/staticpages/index.php/lookup)
 and [EBLook](http://green.ribbon.to/~ikazuhiro/lookup/lookup.html#EBLOOK).
 
-For a Homebrew installation of Lookup, EBLook, and
-[MeCab](https://taku910.github.io/mecab/), configure paths before loading the
-source:
+On macOS, install Lookup for Emacs from the
+[matoi Homebrew tap](https://github.com/matoi/homebrew-tap). The formula also
+installs EBLook and the EB Library; install
+[MeCab](https://taku910.github.io/mecab/) for Japanese phrase selection:
+
+```sh
+brew install matoi/tap/emacs-lookup mecab
+```
+
+Then configure the Homebrew paths before loading the source:
 
 ```elisp
 (require 'reference-explorer-source-lookup-homebrew)
@@ -238,9 +245,9 @@ when both are already configured:
 
 ## Development
 
-Core dispatch lives in `reference-explorer.el`, shared interaction in
-`reference-explorer-ui.el`, and integrations in the role-named `source-*` and
-`provider-*` files.
+`reference-explorer.el` is the package entry point, core dispatch lives in
+`reference-explorer-core.el`, shared interaction in `reference-explorer-ui.el`,
+and integrations in the role-named `source-*` and `provider-*` files.
 
 Run the test suite with:
 

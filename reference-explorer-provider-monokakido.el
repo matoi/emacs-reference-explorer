@@ -8,7 +8,7 @@
 
 ;;; Code:
 
-(require 'reference-explorer)
+(require 'reference-explorer-core)
 (require 'url-util)
 
 (defcustom reference-explorer-provider-monokakido-category nil

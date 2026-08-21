@@ -1,7 +1,7 @@
 ;;; reference-explorer-test.el --- Reference Explorer tests -*- lexical-binding: t -*-
 
 (require 'ert)
-(require 'reference-explorer)
+(require 'reference-explorer-core)
 
 (ert-deftest reference-explorer-query-prefers-active-region ()
   (with-temp-buffer

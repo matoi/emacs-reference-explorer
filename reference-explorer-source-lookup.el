@@ -29,7 +29,7 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'reference-explorer)
+(require 'reference-explorer-core)
 (require 'reference-explorer-ui)
 (require 'seq)
 (require 'subr-x)
