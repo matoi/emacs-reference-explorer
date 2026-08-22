@@ -315,6 +315,10 @@ The frame is clamped to the available height of its parent frame."
 (defvar reference-explorer-ui--quick-session nil)
 (defvar reference-explorer-ui--quick-map-exit-in-progress nil
   "Non-nil while a Quick transient map exit callback is cleaning up.")
+(defvar reference-explorer-ui--embark-target nil
+  "Dynamically captured Quick target used after its child frames close.")
+(defvar reference-explorer-ui--embark-candidates nil
+  "Dynamically captured Quick candidates used after its child frames close.")
 (defvar reference-explorer-ui--active-temporary-preview nil
   "Most recently displayed temporary reference preview.")
 (defvar reference-explorer-ui--preview-interaction nil
@@ -353,6 +357,7 @@ The frame is clamped to the available height of its parent frame."
   ;; declarations compile-time-only avoids pre-binding Embark's defcustoms to
   ;; nil when this module happens to load first.
   (defvar embark-default-action-overrides)
+  (defvar embark-candidate-collectors)
   (defvar embark-exporters-alist)
   (defvar embark-general-map)
   (defvar embark-keymap-alist)
@@ -361,6 +366,8 @@ The frame is clamped to the available height of its parent frame."
 (declare-function consult--lookup-candidate "consult" (selected candidates &rest args))
 (declare-function consult--read "consult" (table &rest options))
 (declare-function consult--tofu-append "consult" (candidate id))
+(declare-function embark-act "embark" (&optional arg))
+(declare-function embark-export "embark" ())
 (declare-function display-buffer-in-child-frame "window" (buffer alist))
 (declare-function vertico-exit "vertico" (&optional arg))
 
@@ -1843,6 +1850,58 @@ The preview remains visible; focus returns to its recorded origin window."
          (nth (reference-explorer-ui--quick-session-index session)
               (reference-explorer-ui--quick-session-entries session)))))
 
+(defun reference-explorer-ui--quick-embark-category (candidate)
+  "Return the Embark category for Quick CANDIDATE, or nil."
+  (when (reference-explorer-candidate-p candidate)
+    (pcase (reference-explorer-candidate-source candidate)
+      ('lookup 'reference-explorer-source-lookup-entry)
+      ('docset 'reference-explorer-source-docset-result)
+      ('thesaurus 'reference-explorer-source-thesaurus-candidate))))
+
+(defun reference-explorer-ui--quick-embark-candidate (candidate context)
+  "Return CANDIDATE as Consult-compatible Embark target text.
+CONTEXT is attached for actions, such as thesaurus replacement, that need the
+originating Quick invocation."
+  (let ((target (copy-sequence (reference-explorer-candidate-label candidate))))
+    (add-text-properties
+     0 (length target)
+     `(consult--candidate ,candidate
+       reference-explorer-context ,context)
+     target)
+    target))
+
+(defun reference-explorer-ui--quick-embark-target ()
+  "Return the current Quick candidate as an Embark target.
+The target uses the same category and text properties as the corresponding
+Consult candidate, so existing actions and exporters work unchanged from both
+the candidate popup and its foreground preview."
+  (or reference-explorer-ui--embark-target
+      (when-let* ((session reference-explorer-ui--quick-session)
+                  (candidate
+                   (reference-explorer-ui--quick-current-entry session))
+                  (category
+                   (reference-explorer-ui--quick-embark-category candidate)))
+        (list category
+              (reference-explorer-ui--quick-embark-candidate
+               candidate (reference-explorer-ui--quick-context))))))
+
+(defun reference-explorer-ui--quick-embark-candidates ()
+  "Return all active Quick entries for `embark-export'."
+  (or reference-explorer-ui--embark-candidates
+      (when-let* ((session reference-explorer-ui--quick-session)
+                  (entries
+                   (reference-explorer-ui--quick-session-entries session))
+                  (category
+                   (reference-explorer-ui--quick-embark-category
+                    (car entries))))
+        (let ((context (reference-explorer-ui--quick-context)))
+          (cons category
+                (mapcar
+                 (lambda (candidate)
+                   (reference-explorer-ui--quick-embark-candidate
+                    candidate context))
+                 entries))))))
+
 (defun reference-explorer-ui--quick-show-help (&optional status)
   "Show a compact quick reference key summary in the minibuffer.
 Prefix the summary with STATUS when it is non-nil."
@@ -2461,6 +2520,38 @@ Selection styling is applied by the renderer across the complete visual row."
   (reference-explorer-ui-quick-return-to-candidates)
   (reference-explorer-ui-quick-open-reference))
 
+(defun reference-explorer-ui-quick-embark-act ()
+  "Run `embark-act' on the current Quick candidate.
+Capture the target, close the candidate popup and preview, then open Embark's
+unobstructed action selector."
+  (interactive)
+  (unless reference-explorer-ui--quick-session
+    (user-error "No quick reference session is active"))
+  (unless (require 'embark nil t)
+    (user-error "Embark is unavailable"))
+  (let ((target (reference-explorer-ui--quick-embark-target)))
+    (unless target
+      (user-error "The current Quick candidate has no Embark actions"))
+    (reference-explorer-ui-quick-quit)
+    (let ((reference-explorer-ui--embark-target target))
+      (call-interactively #'embark-act))))
+
+(defun reference-explorer-ui-quick-embark-export ()
+  "Run `embark-export' on all current Quick candidates.
+Capture the candidates and close the popup and preview before Embark creates
+its unobstructed export buffer."
+  (interactive)
+  (unless reference-explorer-ui--quick-session
+    (user-error "No quick reference session is active"))
+  (unless (require 'embark nil t)
+    (user-error "Embark is unavailable"))
+  (let ((candidates (reference-explorer-ui--quick-embark-candidates)))
+    (unless candidates
+      (user-error "The current Quick candidates cannot be exported"))
+    (reference-explorer-ui-quick-quit)
+    (let ((reference-explorer-ui--embark-candidates candidates))
+      (call-interactively #'embark-export))))
+
 (defun reference-explorer-ui-quick-ignore-input ()
   "Ignore an input that has no action in the current Quick state."
   (interactive))
@@ -2626,7 +2717,9 @@ PREVIOUS-POSITION is the window start and pixel vscroll before the input."
   "TAB" #'reference-explorer-ui-quick-preview-display-entry
   "<tab>" #'reference-explorer-ui-quick-preview-display-entry
   "H-." #'reference-explorer-ui-quick-preview-open-reference
-  "M-m" #'reference-explorer-ui-quick-preview-open-consult)
+  "M-m" #'reference-explorer-ui-quick-preview-open-consult
+  "C-c C-c" #'reference-explorer-ui-quick-embark-act
+  "C-c C-o" #'reference-explorer-ui-quick-embark-export)
 
 
 
@@ -3186,6 +3279,10 @@ ORIGIN-WINDOW receives focus after direct preview interaction ends."
                'reference-explorer-ui-history))
 
 (with-eval-after-load 'embark
+  (add-hook 'embark-target-finders
+            #'reference-explorer-ui--quick-embark-target)
+  (add-hook 'embark-candidate-collectors
+            #'reference-explorer-ui--quick-embark-candidates)
   (set-keymap-parent reference-explorer-ui-thesaurus-embark-map
                      embark-general-map)
   (set-keymap-parent reference-explorer-ui-docset-embark-map

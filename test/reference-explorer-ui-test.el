@@ -157,6 +157,10 @@
   (should-not (lookup-key reference-explorer-ui-quick-map (kbd "H-M-.")))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "M-m"))
               #'reference-explorer-ui-quick-preview-open-consult))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "C-c C-c"))
+              #'reference-explorer-ui-quick-embark-act))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "C-c C-o"))
+              #'reference-explorer-ui-quick-embark-export))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "C-g"))
               #'reference-explorer-ui-quick-cancel-or-return))
   ;; Unrecognized keys must fall through the transient map to the source
@@ -756,6 +760,123 @@
       (setf (reference-explorer-ui--quick-session-state session) 'candidate)
       (reference-explorer-ui-quick-cancel-or-return))
     (should (equal (nreverse actions) '(return quit)))))
+
+(ert-deftest reference-explorer-ui-quick-exposes-lookup-embark-target ()
+  (let* ((context (reference-explorer-context-create :query "entry"))
+         (candidate
+          (reference-explorer-candidate-create
+           :source 'lookup :value 'lookup-entry :label "entry"
+           :annotation ""))
+         (reference-explorer-ui--quick-session
+          (reference-explorer-ui--make-quick-session
+           :context context :entries (list candidate) :index 0)))
+    (pcase (reference-explorer-ui--quick-embark-target)
+      (`(reference-explorer-source-lookup-entry ,target)
+       (should (equal target "entry"))
+       (should (eq (get-text-property 0 'consult--candidate target)
+                   candidate))
+       (should (eq (get-text-property 0 'reference-explorer-context target)
+                   context)))
+      (_ (ert-fail "Missing Quick Lookup Embark target")))))
+
+(ert-deftest reference-explorer-ui-quick-selects-source-embark-category ()
+  (dolist (case '((lookup reference-explorer-source-lookup-entry)
+                  (docset reference-explorer-source-docset-result)
+                  (thesaurus reference-explorer-source-thesaurus-candidate)))
+    (let* ((candidate
+            (reference-explorer-candidate-create
+             :source (car case) :value 'value :label "label" :annotation ""))
+           (reference-explorer-ui--quick-session
+            (reference-explorer-ui--make-quick-session
+             :entries (list candidate) :index 0)))
+      (should (eq (car (reference-explorer-ui--quick-embark-target))
+                  (cadr case))))))
+
+(ert-deftest reference-explorer-ui-quick-collects-all-embark-candidates ()
+  (let* ((context (reference-explorer-context-create :query "entry"))
+         (first
+          (reference-explorer-candidate-create
+           :source 'lookup :value 'first :label "first" :annotation ""))
+         (second
+          (reference-explorer-candidate-create
+           :source 'lookup :value 'second :label "second" :annotation ""))
+         (reference-explorer-ui--quick-session
+          (reference-explorer-ui--make-quick-session
+           :context context :entries (list first second) :index 1)))
+    (pcase (reference-explorer-ui--quick-embark-candidates)
+      (`(reference-explorer-source-lookup-entry ,first-target ,second-target)
+       (should (equal (list first-target second-target) '("first" "second")))
+       (should (eq (get-text-property 0 'consult--candidate first-target)
+                   first))
+       (should (eq (get-text-property 0 'consult--candidate second-target)
+                   second)))
+      (_ (ert-fail "Missing Quick Embark candidate collection")))))
+
+(ert-deftest reference-explorer-ui-quick-embark-act-closes-before-prompt ()
+  (let ((reference-explorer-ui--quick-session
+         (reference-explorer-ui--make-quick-session :state 'preview))
+        actions target-during-act)
+    (cl-letf (((symbol-function 'require) (lambda (&rest _args) t))
+              ((symbol-function
+                'reference-explorer-ui--quick-embark-target)
+               (lambda () '(category "target")))
+              ((symbol-function 'reference-explorer-ui-quick-quit)
+               (lambda ()
+                 (setq reference-explorer-ui--quick-session nil)
+                 (push 'quit actions)))
+              ((symbol-function 'embark-act)
+               (lambda (&optional _arg)
+                 (interactive)
+                 (setq target-during-act
+                       reference-explorer-ui--embark-target)
+                 (push 'act actions))))
+      (reference-explorer-ui-quick-embark-act))
+    (should (equal (nreverse actions) '(quit act)))
+    (should (equal target-during-act '(category "target")))
+    (should-not reference-explorer-ui--quick-session)))
+
+(ert-deftest reference-explorer-ui-quick-embark-export-closes-before-export ()
+  (let ((reference-explorer-ui--quick-session
+         (reference-explorer-ui--make-quick-session :state 'preview))
+        actions candidates-during-export)
+    (cl-letf (((symbol-function 'require) (lambda (&rest _args) t))
+              ((symbol-function
+                'reference-explorer-ui--quick-embark-candidates)
+               (lambda () '(category "first" "second")))
+              ((symbol-function 'reference-explorer-ui-quick-quit)
+               (lambda ()
+                 (setq reference-explorer-ui--quick-session nil)
+                 (push 'quit actions)))
+              ((symbol-function 'embark-export)
+               (lambda ()
+                 (interactive)
+                 (setq candidates-during-export
+                       reference-explorer-ui--embark-candidates)
+                 (push 'export actions))))
+      (reference-explorer-ui-quick-embark-export))
+    (should (equal (nreverse actions) '(quit export)))
+    (should (equal candidates-during-export
+                   '(category "first" "second")))
+    (should-not reference-explorer-ui--quick-session)))
+
+(ert-deftest reference-explorer-ui-quick-embark-export-stays-closed-on-error ()
+  (let ((reference-explorer-ui--quick-session
+         (reference-explorer-ui--make-quick-session :state 'candidate))
+        quit)
+    (cl-letf (((symbol-function 'require) (lambda (&rest _args) t))
+              ((symbol-function
+                'reference-explorer-ui--quick-embark-candidates)
+               (lambda () '(category "target")))
+              ((symbol-function 'embark-export)
+               (lambda () (interactive) (user-error "No exporter")))
+              ((symbol-function 'reference-explorer-ui-quick-quit)
+               (lambda ()
+                 (setq reference-explorer-ui--quick-session nil
+                       quit t))))
+      (should-error (reference-explorer-ui-quick-embark-export)
+                    :type 'user-error))
+    (should quit)
+    (should-not reference-explorer-ui--quick-session)))
 
 (ert-deftest reference-explorer-ui-promotes-shr-preview-to-selected-content ()
   (let ((preview
