@@ -116,15 +116,15 @@
 
 (ert-deftest reference-explorer-ui-quick-selector-keymap-is-non-invasive ()
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-n"))
-              #'reference-explorer-ui-quick-next))
+              #'reference-explorer-ui-quick-preview-next))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-p"))
-              #'reference-explorer-ui-quick-previous))
+              #'reference-explorer-ui-quick-preview-previous))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-s"))
-              #'reference-explorer-ui-quick-shorten-query))
+              #'reference-explorer-ui-quick-preview-shorten-query))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-e"))
-              #'reference-explorer-ui-quick-expand-query))
+              #'reference-explorer-ui-quick-preview-expand-query))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-q"))
-              #'reference-explorer-ui-quick-quit))
+              #'reference-explorer-ui-quick-ignore-input))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-v"))
               #'reference-explorer-ui-preview-scroll-up))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-V"))
@@ -135,25 +135,30 @@
                  "<double-wheel-left>" "<double-wheel-right>"
                  "<triple-wheel-up>" "<triple-wheel-down>"
                  "<triple-wheel-left>" "<triple-wheel-right>"
-                 "<mouse-4>" "<mouse-5>" "<mouse-6>" "<mouse-7>"
-                 "<touch-end>"))
+                 "<mouse-4>" "<mouse-5>" "<mouse-6>" "<mouse-7>"))
     (should (eq (lookup-key reference-explorer-ui-quick-map (kbd key))
-                #'reference-explorer-ui-quick-ignore-wheel)))
-  (dolist (command '(pixel-scroll-precision
-                     pixel-scroll-start-momentum
-                     mwheel-scroll))
+                #'reference-explorer-ui-quick-handle-wheel)))
+  (dolist (command '(pixel-scroll-precision mwheel-scroll))
     (should (eq (lookup-key reference-explorer-ui-quick-map
                             (vector 'remap command))
-                #'reference-explorer-ui-quick-ignore-wheel)))
+                #'reference-explorer-ui-quick-handle-wheel)))
+  (should (eq (lookup-key reference-explorer-ui-quick-map
+                          [remap pixel-scroll-start-momentum])
+              #'reference-explorer-ui-quick-handle-preview-input))
+  (should (eq (lookup-key reference-explorer-ui-quick-map
+                          (kbd "<touch-end>"))
+              #'reference-explorer-ui-quick-handle-preview-input))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-i"))
               #'reference-explorer-ui-quick-activate-preview))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "TAB"))
-              #'reference-explorer-ui-quick-display-entry))
+              #'reference-explorer-ui-quick-preview-display-entry))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-."))
-              #'reference-explorer-ui-quick-open-reference))
+              #'reference-explorer-ui-quick-preview-open-reference))
   (should-not (lookup-key reference-explorer-ui-quick-map (kbd "H-M-.")))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "M-m"))
-              #'reference-explorer-ui-quick-open-consult))
+              #'reference-explorer-ui-quick-preview-open-consult))
+  (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "C-g"))
+              #'reference-explorer-ui-quick-cancel-or-return))
   ;; Unrecognized keys must fall through the transient map to the source
   ;; buffer instead of being captured by quick Lookup.
   (should-not (lookup-key reference-explorer-ui-quick-map (kbd "a"))))
@@ -546,7 +551,7 @@
       (should (eq displayed-in source-window))
       (should (eq (selected-window) original-window)))))
 
-(ert-deftest reference-explorer-ui-quick-promotes-preview-before-cleanup ()
+(ert-deftest reference-explorer-ui-quick-promotes-preview-with-session-retained ()
   (let* (exited
          activated
          (preview
@@ -562,17 +567,102 @@
          (reference-explorer-ui--active-temporary-preview preview))
     (cl-letf (((symbol-function
                 'reference-explorer-ui--activate-preview-interaction)
-               (lambda (candidate origin-window)
+              (lambda (candidate origin-window)
                  (setq activated (cons candidate origin-window))))
-              ((symbol-function
-                'reference-explorer-ui--active-webkit-preview-xwidget)
-               (lambda () 'preview-xwidget))
               ((symbol-function 'reference-explorer-ui--preview-live-p)
                (lambda (_preview) t)))
       (reference-explorer-ui-quick-activate-preview))
-    (should exited)
-    (should-not (reference-explorer-ui--quick-session-preview session))
+    (should-not exited)
+    (should (eq reference-explorer-ui--quick-session session))
+    (should (eq (reference-explorer-ui--quick-session-preview session)
+                preview))
+    (should (eq (reference-explorer-ui--quick-session-state session)
+                'preview))
     (should (equal activated (cons preview 'source-window)))))
+
+(ert-deftest reference-explorer-ui-quick-returns-to-retained-candidates ()
+  (let* (demoted
+         helped
+         (preview
+          (reference-explorer-ui--make-preview 'frame 'buffer 'entry))
+         (session
+          (reference-explorer-ui--make-quick-session
+           :state 'preview
+           :preview preview))
+         (reference-explorer-ui--quick-session session))
+    (cl-letf (((symbol-function
+                'reference-explorer-ui--demote-child-frame-preview-interaction)
+               (lambda () (setq demoted t)))
+              ((symbol-function
+                'reference-explorer-ui--quick-show-help)
+               (lambda (&optional _message) (setq helped t))))
+      (reference-explorer-ui-quick-return-to-candidates))
+    (should demoted)
+    (should helped)
+    (should (eq reference-explorer-ui--quick-session session))
+    (should (eq (reference-explorer-ui--quick-session-preview session)
+                preview))
+    (should (eq (reference-explorer-ui--quick-session-state session)
+                'candidate))))
+
+(ert-deftest reference-explorer-ui-quick-preview-next-returns-before-moving ()
+  (let (actions)
+    (cl-letf (((symbol-function
+                'reference-explorer-ui-quick-return-to-candidates)
+               (lambda () (push 'return actions)))
+              ((symbol-function 'reference-explorer-ui-quick-next)
+               (lambda (&optional _backward) (push 'next actions))))
+      (reference-explorer-ui-quick-preview-next))
+    (should (equal (nreverse actions) '(return next)))))
+
+(ert-deftest reference-explorer-ui-quick-wheel-promotes-then-forwards-event ()
+  (let* ((event '(wheel-down preview-position 1 60 (0.0 . -120.0)))
+         (session
+          (reference-explorer-ui--make-quick-session :state 'candidate))
+         (reference-explorer-ui--quick-session session)
+         actions)
+    (cl-letf (((symbol-function
+                'reference-explorer-ui-quick-activate-preview)
+               (lambda ()
+                 (push 'promote actions)
+                 (setf (reference-explorer-ui--quick-session-state session)
+                       'preview)))
+              ((symbol-function 'reference-explorer-ui--quick-forward-input)
+               (lambda () (push 'forward actions))))
+      (reference-explorer-ui-quick-handle-wheel event))
+    (should (equal (nreverse actions) '(promote forward)))
+    (should (eq reference-explorer-ui--quick-session session))))
+
+(ert-deftest reference-explorer-ui-quick-forwarding-preserves-this-command ()
+  (let ((overriding-terminal-local-map
+         (list 'keymap reference-explorer-ui-quick-map))
+        (this-command 'reference-explorer-ui-quick-handle-wheel))
+    (cl-letf (((symbol-function 'this-command-keys-vector)
+               (lambda () (kbd "<wheel-down>")))
+              ((symbol-function 'key-binding)
+               (lambda (&rest _arguments) 'renderer-scroll))
+              ((symbol-function 'commandp)
+               (lambda (command) (eq command 'renderer-scroll)))
+              ((symbol-function 'command-execute)
+               (lambda (_command) (setq this-command 'renderer-scroll))))
+      (reference-explorer-ui--quick-forward-input))
+    (should (eq this-command
+                'reference-explorer-ui-quick-handle-wheel))))
+
+(ert-deftest reference-explorer-ui-quick-c-g-returns-then-quits ()
+  (let* ((session
+          (reference-explorer-ui--make-quick-session :state 'preview))
+         (reference-explorer-ui--quick-session session)
+         actions)
+    (cl-letf (((symbol-function
+                'reference-explorer-ui-quick-return-to-candidates)
+               (lambda () (push 'return actions)))
+              ((symbol-function 'reference-explorer-ui-quick-quit)
+               (lambda () (push 'quit actions))))
+      (reference-explorer-ui-quick-cancel-or-return)
+      (setf (reference-explorer-ui--quick-session-state session) 'candidate)
+      (reference-explorer-ui-quick-cancel-or-return))
+    (should (equal (nreverse actions) '(return quit)))))
 
 (ert-deftest reference-explorer-ui-promotes-shr-preview-to-selected-content ()
   (let ((preview

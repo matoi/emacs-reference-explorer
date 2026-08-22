@@ -296,6 +296,7 @@ The frame is clamped to the available height of its parent frame."
   preview-timer
   consult-function
   help
+  state
   exit-function)
 
 (defvar reference-explorer-ui-history nil
@@ -312,6 +313,8 @@ The frame is clamped to the available height of its parent frame."
 (defvar reference-explorer-ui--consult-query-options nil)
 (defvar reference-explorer-ui--consult-query-index nil)
 (defvar reference-explorer-ui--quick-session nil)
+(defvar reference-explorer-ui--quick-map-exit-in-progress nil
+  "Non-nil while a Quick transient map exit callback is cleaning up.")
 (defvar reference-explorer-ui--active-temporary-preview nil
   "Most recently displayed temporary reference preview.")
 (defvar reference-explorer-ui--preview-interaction nil
@@ -1751,7 +1754,7 @@ DIRECTION is `up' to reveal later text or `down' to reveal earlier text."
     (set-frame-parameter frame 'no-focus-on-map nil)
     (redirect-frame-focus frame nil)
     (select-frame-set-input-focus frame)
-    (message "Preview interaction: scroll directly; C-g/H-q exits")))
+    (message "Preview interaction: scroll directly; C-g returns")))
 
 (defun reference-explorer-ui--display-entry-for-interaction
     (entry origin-window)
@@ -1783,9 +1786,9 @@ are committed to a selected Popper window."
          entry origin-window)
       (user-error "The reference preview has no operable content"))))
 
-(defun reference-explorer-ui-preview-exit-interaction ()
-  "End direct preview interaction and return to its origin window."
-  (interactive)
+(defun reference-explorer-ui--demote-child-frame-preview-interaction ()
+  "Demote and return the directly operated child-frame preview.
+The preview remains visible; focus returns to its recorded origin window."
   (let ((preview reference-explorer-ui--preview-interaction)
         (origin-window reference-explorer-ui--preview-interaction-origin-window))
     (setq reference-explorer-ui--preview-interaction nil
@@ -1800,11 +1803,18 @@ are committed to a selected Popper window."
           (set-frame-parameter frame 'no-accept-focus t)
           (set-frame-parameter frame 'no-focus-on-map t)
           (when-let ((parent (frame-parent frame)))
-            (redirect-frame-focus frame parent)))
-        (reference-explorer-ui--close-temporary-preview preview)))
+            (redirect-frame-focus frame parent)))))
     (when (window-live-p origin-window)
       (select-window origin-window)
-      (select-frame-set-input-focus (window-frame origin-window)))))
+      (select-frame-set-input-focus (window-frame origin-window)))
+    preview))
+
+(defun reference-explorer-ui-preview-exit-interaction ()
+  "End direct preview interaction and return to its origin window."
+  (interactive)
+  (when-let ((preview
+              (reference-explorer-ui--demote-child-frame-preview-interaction)))
+    (reference-explorer-ui--close-temporary-preview preview)))
 
 (add-hook 'delete-frame-functions
           #'reference-explorer-ui--preview-frame-deleted)
@@ -2224,10 +2234,39 @@ Selection styling is applied by the renderer across the complete visual row."
 (add-hook 'delete-frame-functions
           #'reference-explorer-ui--quick-list-frame-deleted)
 
+(defun reference-explorer-ui--quick-transient-map-exited (session)
+  "Clean up SESSION after its active transient map exits normally."
+  (let ((reference-explorer-ui--quick-map-exit-in-progress t))
+    (when (eq session reference-explorer-ui--quick-session)
+      (reference-explorer-ui--quick-cleanup))))
+
+(defun reference-explorer-ui--quick-deactivate-transient-map (session)
+  "Deactivate SESSION's transient map without cleaning up SESSION."
+  (when-let ((exit
+              (reference-explorer-ui--quick-session-exit-function session)))
+    (setf (reference-explorer-ui--quick-session-exit-function session) nil)
+    (funcall exit)))
+
+(defun reference-explorer-ui--quick-install-transient-map
+    (session map keep-pred)
+  "Install MAP for SESSION, retaining it according to KEEP-PRED."
+  (setf
+   (reference-explorer-ui--quick-session-exit-function session)
+   (set-transient-map
+    map keep-pred
+    (lambda ()
+      (reference-explorer-ui--quick-transient-map-exited session)))))
+
 (defun reference-explorer-ui--quick-cleanup ()
   "Release all resources owned by the active quick reference session."
   (when-let ((session reference-explorer-ui--quick-session))
     (setq reference-explorer-ui--quick-session nil)
+    (unless reference-explorer-ui--quick-map-exit-in-progress
+      (reference-explorer-ui--quick-deactivate-transient-map session))
+    (setf (reference-explorer-ui--quick-session-exit-function session) nil)
+    (when (eq (reference-explorer-ui--quick-session-preview session)
+              reference-explorer-ui--preview-interaction)
+      (reference-explorer-ui--demote-child-frame-preview-interaction))
     (reference-explorer-ui--quick-cancel-preview session)
     (when-let ((overlay
                 (reference-explorer-ui--quick-session-source-overlay session)))
@@ -2340,38 +2379,127 @@ Selection styling is applied by the renderer across the complete visual row."
       (user-error "This source does not provide a Consult continuation"))))
 
 (defun reference-explorer-ui-quick-activate-preview ()
-  "Close quick candidates and promote their preview for interaction."
+  "Promote the Quick preview while retaining its candidate session."
   (interactive)
   (let ((session reference-explorer-ui--quick-session))
     (unless session
       (user-error "No quick reference session is active"))
-    (let* ((candidate (reference-explorer-ui--quick-current-entry session))
-           (entry (and candidate
-                       (reference-explorer-ui--candidate-preview-entry
-                        candidate)))
-           (preview
-            (or (reference-explorer-ui--quick-session-preview session)
-                (and entry
-                     (reference-explorer-ui--make-preview nil nil entry)))))
-      (unless preview
-        (user-error "The current candidate has no operable preview"))
-      (let ((origin-window
-             (reference-explorer-ui--quick-session-source-window session)))
-        ;; A live temporary view is itself promoted.  A preview that has not
-        ;; been displayed in a child frame is recreated as committed content.
-        (when (and (eq preview reference-explorer-ui--active-temporary-preview)
-                   (reference-explorer-ui--preview-live-p preview))
-          (setf (reference-explorer-ui--quick-session-preview session) nil))
-        (if-let ((exit
-                  (reference-explorer-ui--quick-session-exit-function session)))
-            (funcall exit)
-          (reference-explorer-ui--quick-cleanup))
+    (let ((candidate (reference-explorer-ui--quick-current-entry session)))
+      (unless (reference-explorer-ui--preview-live-p
+               (reference-explorer-ui--quick-session-preview session))
+        (reference-explorer-ui--quick-cancel-preview session)
+        (reference-explorer-ui--quick-show-preview session candidate))
+      (let ((preview
+             (reference-explorer-ui--quick-session-preview session)))
+        (unless (and (eq preview
+                         reference-explorer-ui--active-temporary-preview)
+                     (reference-explorer-ui--preview-live-p preview))
+          (user-error "The current candidate has no operable preview"))
+        (setf (reference-explorer-ui--quick-session-state session) 'preview)
         (reference-explorer-ui--activate-preview-interaction
-         preview origin-window)))))
+         preview
+         (reference-explorer-ui--quick-session-source-window session))))))
 
-(defun reference-explorer-ui-quick-ignore-wheel ()
-  "Ignore wheel input while the Quick candidate session is active."
+(defun reference-explorer-ui-quick-return-to-candidates ()
+  "Return from direct preview interaction to Quick candidate operation."
+  (interactive)
+  (when-let ((session reference-explorer-ui--quick-session))
+    (when (eq (reference-explorer-ui--quick-session-state session) 'preview)
+      (reference-explorer-ui--demote-child-frame-preview-interaction)
+      (setf (reference-explorer-ui--quick-session-state session) 'candidate)
+      (reference-explorer-ui--quick-show-help))))
+
+(defun reference-explorer-ui-quick-cancel-or-return ()
+  "Return from preview operation, or quit from candidate operation."
+  (interactive)
+  (if (and reference-explorer-ui--quick-session
+           (eq (reference-explorer-ui--quick-session-state
+                reference-explorer-ui--quick-session)
+               'preview))
+      (reference-explorer-ui-quick-return-to-candidates)
+    (reference-explorer-ui-quick-quit)))
+
+(defun reference-explorer-ui-quick-preview-next ()
+  "Return to candidate operation and select the next Quick entry."
+  (interactive)
+  (reference-explorer-ui-quick-return-to-candidates)
+  (reference-explorer-ui-quick-next))
+
+(defun reference-explorer-ui-quick-preview-previous ()
+  "Return to candidate operation and select the previous Quick entry."
+  (interactive)
+  (reference-explorer-ui-quick-return-to-candidates)
+  (reference-explorer-ui-quick-previous))
+
+(defun reference-explorer-ui-quick-preview-shorten-query ()
+  "Return to candidate operation and shorten the Quick query."
+  (interactive)
+  (reference-explorer-ui-quick-return-to-candidates)
+  (reference-explorer-ui-quick-shorten-query))
+
+(defun reference-explorer-ui-quick-preview-expand-query ()
+  "Return to candidate operation and expand the Quick query."
+  (interactive)
+  (reference-explorer-ui-quick-return-to-candidates)
+  (reference-explorer-ui-quick-expand-query))
+
+(defun reference-explorer-ui-quick-preview-display-entry ()
+  "Return to candidate operation and commit the selected Quick entry."
+  (interactive)
+  (reference-explorer-ui-quick-return-to-candidates)
+  (reference-explorer-ui-quick-display-entry))
+
+(defun reference-explorer-ui-quick-preview-open-consult ()
+  "Return to candidate operation and continue it in Consult."
+  (interactive)
+  (reference-explorer-ui-quick-return-to-candidates)
+  (reference-explorer-ui-quick-open-consult))
+
+(defun reference-explorer-ui-quick-preview-open-reference ()
+  "Return to candidate operation and run the configured reference source."
+  (interactive)
+  (reference-explorer-ui-quick-return-to-candidates)
+  (reference-explorer-ui-quick-open-reference))
+
+(defun reference-explorer-ui-quick-ignore-input ()
+  "Ignore an input that has no action in the current Quick state."
   (interactive))
+
+(defun reference-explorer-ui--quick-forward-input ()
+  "Run the normal binding for the current input below the Quick map."
+  (let* ((overriding-terminal-local-map
+          (delq reference-explorer-ui-quick-map
+                (copy-sequence overriding-terminal-local-map)))
+         (command (key-binding (this-command-keys-vector) t)))
+    (when (and (commandp command)
+               (not (memq command
+                          '(reference-explorer-ui-quick-handle-wheel
+                            reference-explorer-ui-quick-handle-preview-input))))
+      ;; `set-transient-map' compares `this-command' with the Quick binding
+      ;; before the next command.  Preserve it across the nested renderer
+      ;; command so forwarding a wheel event does not terminate Quick.
+      (let ((quick-command this-command))
+        (unwind-protect
+            (command-execute command)
+          (setq this-command quick-command))))))
+
+(defun reference-explorer-ui-quick-handle-wheel (_event)
+  "Promote the Quick preview if needed, then forward its wheel event."
+  (interactive "e")
+  (when-let ((session reference-explorer-ui--quick-session))
+    (when (eq (reference-explorer-ui--quick-session-state session) 'candidate)
+      (reference-explorer-ui-quick-activate-preview))
+    (when (eq (reference-explorer-ui--quick-session-state session) 'preview)
+      (reference-explorer-ui--quick-forward-input))))
+
+(defun reference-explorer-ui-quick-handle-preview-input (_event)
+  "Forward the current input only while operating the Quick preview."
+  (interactive "e")
+  (when (and reference-explorer-ui--quick-session
+             (eq (reference-explorer-ui--quick-session-state
+                  reference-explorer-ui--quick-session)
+                 'preview))
+    (reference-explorer-ui--quick-forward-input)))
 
 (defun reference-explorer-ui--quick-context ()
   "Return a reference context for the active quick reference query."
@@ -2407,41 +2535,43 @@ Selection styling is applied by the renderer across the complete visual row."
   (reference-explorer-ui--quick-run-source 'monokakido))
 
 (defvar-keymap reference-explorer-ui-quick-map
-  :doc "Transient keymap active during quick reference."
-  "H-n" #'reference-explorer-ui-quick-next
-  "H-p" #'reference-explorer-ui-quick-previous
-  "H-s" #'reference-explorer-ui-quick-shorten-query
-  "H-e" #'reference-explorer-ui-quick-expand-query
+  :doc "Transient keymap active in both states of quick reference."
+  "H-n" #'reference-explorer-ui-quick-preview-next
+  "H-p" #'reference-explorer-ui-quick-preview-previous
+  "H-s" #'reference-explorer-ui-quick-preview-shorten-query
+  "H-e" #'reference-explorer-ui-quick-preview-expand-query
   "H-v" #'reference-explorer-ui-preview-scroll-up
   "H-V" #'reference-explorer-ui-preview-scroll-down
-  "<remap> <pixel-scroll-precision>" #'reference-explorer-ui-quick-ignore-wheel
+  "<remap> <pixel-scroll-precision>"
+  #'reference-explorer-ui-quick-handle-wheel
   "<remap> <pixel-scroll-start-momentum>"
-  #'reference-explorer-ui-quick-ignore-wheel
-  "<remap> <mwheel-scroll>" #'reference-explorer-ui-quick-ignore-wheel
-  "<wheel-up>" #'reference-explorer-ui-quick-ignore-wheel
-  "<wheel-down>" #'reference-explorer-ui-quick-ignore-wheel
-  "<wheel-left>" #'reference-explorer-ui-quick-ignore-wheel
-  "<wheel-right>" #'reference-explorer-ui-quick-ignore-wheel
-  "<double-wheel-up>" #'reference-explorer-ui-quick-ignore-wheel
-  "<double-wheel-down>" #'reference-explorer-ui-quick-ignore-wheel
-  "<double-wheel-left>" #'reference-explorer-ui-quick-ignore-wheel
-  "<double-wheel-right>" #'reference-explorer-ui-quick-ignore-wheel
-  "<triple-wheel-up>" #'reference-explorer-ui-quick-ignore-wheel
-  "<triple-wheel-down>" #'reference-explorer-ui-quick-ignore-wheel
-  "<triple-wheel-left>" #'reference-explorer-ui-quick-ignore-wheel
-  "<triple-wheel-right>" #'reference-explorer-ui-quick-ignore-wheel
-  "<mouse-4>" #'reference-explorer-ui-quick-ignore-wheel
-  "<mouse-5>" #'reference-explorer-ui-quick-ignore-wheel
-  "<mouse-6>" #'reference-explorer-ui-quick-ignore-wheel
-  "<mouse-7>" #'reference-explorer-ui-quick-ignore-wheel
-  "<touch-end>" #'reference-explorer-ui-quick-ignore-wheel
+  #'reference-explorer-ui-quick-handle-preview-input
+  "<remap> <mwheel-scroll>"
+  #'reference-explorer-ui-quick-handle-wheel
+  "<wheel-up>" #'reference-explorer-ui-quick-handle-wheel
+  "<wheel-down>" #'reference-explorer-ui-quick-handle-wheel
+  "<wheel-left>" #'reference-explorer-ui-quick-handle-wheel
+  "<wheel-right>" #'reference-explorer-ui-quick-handle-wheel
+  "<double-wheel-up>" #'reference-explorer-ui-quick-handle-wheel
+  "<double-wheel-down>" #'reference-explorer-ui-quick-handle-wheel
+  "<double-wheel-left>" #'reference-explorer-ui-quick-handle-wheel
+  "<double-wheel-right>" #'reference-explorer-ui-quick-handle-wheel
+  "<triple-wheel-up>" #'reference-explorer-ui-quick-handle-wheel
+  "<triple-wheel-down>" #'reference-explorer-ui-quick-handle-wheel
+  "<triple-wheel-left>" #'reference-explorer-ui-quick-handle-wheel
+  "<triple-wheel-right>" #'reference-explorer-ui-quick-handle-wheel
+  "<mouse-4>" #'reference-explorer-ui-quick-handle-wheel
+  "<mouse-5>" #'reference-explorer-ui-quick-handle-wheel
+  "<mouse-6>" #'reference-explorer-ui-quick-handle-wheel
+  "<mouse-7>" #'reference-explorer-ui-quick-handle-wheel
+  "<touch-end>" #'reference-explorer-ui-quick-handle-preview-input
   "H-i" #'reference-explorer-ui-quick-activate-preview
-  "H-q" #'reference-explorer-ui-quick-quit
-  "C-g" #'reference-explorer-ui-quick-quit
-  "TAB" #'reference-explorer-ui-quick-display-entry
-  "<tab>" #'reference-explorer-ui-quick-display-entry
-  "H-." #'reference-explorer-ui-quick-open-reference
-  "M-m" #'reference-explorer-ui-quick-open-consult)
+  "H-q" #'reference-explorer-ui-quick-ignore-input
+  "C-g" #'reference-explorer-ui-quick-cancel-or-return
+  "TAB" #'reference-explorer-ui-quick-preview-display-entry
+  "<tab>" #'reference-explorer-ui-quick-preview-display-entry
+  "H-." #'reference-explorer-ui-quick-preview-open-reference
+  "M-m" #'reference-explorer-ui-quick-preview-open-consult)
 
 
 
@@ -2454,10 +2584,9 @@ Selection styling is applied by the renderer across the complete visual row."
         (reference-explorer-ui--quick-cleanup)
         (message "Quick reference: cannot display candidates for “%s”"
                  (reference-explorer-ui--quick-session-query session)))
-    (setf
-     (reference-explorer-ui--quick-session-exit-function session)
-     (set-transient-map reference-explorer-ui-quick-map t
-                        #'reference-explorer-ui--quick-cleanup))
+    (setf (reference-explorer-ui--quick-session-state session) 'candidate)
+    (reference-explorer-ui--quick-install-transient-map
+     session reference-explorer-ui-quick-map t)
     (reference-explorer-ui--quick-highlight-source session)
     (reference-explorer-ui--quick-schedule-preview session)
     (reference-explorer-ui--quick-show-help)))
