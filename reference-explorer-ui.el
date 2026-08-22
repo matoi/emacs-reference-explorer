@@ -325,8 +325,6 @@ The frame is clamped to the available height of its parent frame."
   "Preview currently promoted for direct user interaction.")
 (defvar reference-explorer-ui--preview-interaction-origin-window nil
   "Window to restore after direct preview interaction.")
-(defvar reference-explorer-ui--preview-interaction-request nil
-  "Preview a Consult state function must retain while its minibuffer exits.")
 (defvar reference-explorer-ui--docset-webkit-warning-shown nil
   "Non-nil after warning once about a WebKit docset preview failure.")
 (defvar reference-explorer-ui--docset-webkit-preview-caches
@@ -1763,36 +1761,6 @@ DIRECTION is `up' to reveal later text or `down' to reveal earlier text."
     (select-frame-set-input-focus frame)
     (message "Preview interaction: scroll directly; C-g returns")))
 
-(defun reference-explorer-ui--display-entry-for-interaction
-    (entry origin-window)
-  "Display ENTRY as committed content and select it from ORIGIN-WINDOW."
-  (let ((buffer
-         (if (window-live-p origin-window)
-             (with-selected-window origin-window
-               (reference-explorer-ui--display-entry entry))
-           (reference-explorer-ui--display-entry entry))))
-    (if-let ((window (get-buffer-window buffer t)))
-        (progn
-          (select-window window)
-          (select-frame-set-input-focus (window-frame window)))
-      (user-error "The committed reference content could not be displayed"))))
-
-(defun reference-explorer-ui--activate-preview-interaction
-    (preview origin-window)
-  "Promote PREVIEW to an operable display, returning to ORIGIN-WINDOW.
-Live temporary previews retain their rendered child frame.  Other previews
-are committed to a selected Popper window."
-  (unless (reference-explorer-ui--preview-p preview)
-    (user-error "No reference preview is available"))
-  (if (and (eq preview reference-explorer-ui--active-temporary-preview)
-           (reference-explorer-ui--preview-live-p preview))
-      (reference-explorer-ui--activate-child-frame-preview-interaction
-       preview origin-window)
-    (if-let ((entry (reference-explorer-ui--preview-entry preview)))
-        (reference-explorer-ui--display-entry-for-interaction
-         entry origin-window)
-      (user-error "The reference preview has no operable content"))))
-
 (defun reference-explorer-ui--demote-child-frame-preview-interaction ()
   "Demote and return the directly operated child-frame preview.
 The preview remains visible; focus returns to its recorded origin window."
@@ -1831,9 +1799,7 @@ The preview remains visible; focus returns to its recorded origin window."
   (let (preview)
     (lambda (action entry)
       (when preview
-        (if (eq preview reference-explorer-ui--preview-interaction-request)
-            (setq reference-explorer-ui--preview-interaction-request nil)
-          (reference-explorer-ui--close-temporary-preview preview))
+        (reference-explorer-ui--close-temporary-preview preview)
         (setq preview nil))
       (pcase action
         ('preview
@@ -2455,7 +2421,7 @@ Selection styling is applied by the renderer across the complete visual row."
                      (reference-explorer-ui--preview-live-p preview))
           (user-error "The current candidate has no operable preview"))
         (setf (reference-explorer-ui--quick-session-state session) 'preview)
-        (reference-explorer-ui--activate-preview-interaction
+        (reference-explorer-ui--activate-child-frame-preview-interaction
          preview
          (reference-explorer-ui--quick-session-source-window session))))))
 
@@ -2578,16 +2544,17 @@ its unobstructed export buffer."
 (defun reference-explorer-ui--quick-wheel-vertical-direction (event command)
   "Return the vertical scroll direction represented by EVENT.
 COMMAND is the renderer command handling EVENT.  The result is
-`beginning', `end', or nil for non-vertical input."
-  (let ((delta (and (consp event) (nth 4 event))))
+  `beginning', `end', or nil for non-vertical input."
+  (let* ((delta (and (consp event) (nth 4 event)))
+         (vertical-delta (and (consp delta) (cdr delta))))
     (cond
      ((and (eq command 'pixel-scroll-precision)
-           (consp delta)
-           (< (round (cdr delta)) 0))
+           (numberp vertical-delta)
+           (< vertical-delta 0))
       'beginning)
      ((and (eq command 'pixel-scroll-precision)
-           (consp delta)
-           (> (round (cdr delta)) 0))
+           (numberp vertical-delta)
+           (> vertical-delta 0))
       'end)
      ((and (eq command 'pixel-scroll-precision) (consp delta)) nil)
      ((memq (event-basic-type event) '(wheel-up mouse-4)) 'beginning)
@@ -2626,13 +2593,13 @@ PREVIOUS-POSITION is the window start and pixel vscroll before the input."
     (when (eq (reference-explorer-ui--quick-session-state session) 'preview)
       (let* ((window (selected-window))
              (position
-              (cons (window-start window) (window-vscroll window t))))
-        (let* ((command (reference-explorer-ui--quick-forward-input))
-               (direction
-                (reference-explorer-ui--quick-wheel-vertical-direction
-                 event command)))
-          (reference-explorer-ui--quick-normalize-shr-scroll-endpoint
-           window direction position))))))
+              (cons (window-start window) (window-vscroll window t)))
+             (command (reference-explorer-ui--quick-forward-input))
+             (direction
+              (reference-explorer-ui--quick-wheel-vertical-direction
+               event command)))
+        (reference-explorer-ui--quick-normalize-shr-scroll-endpoint
+         window direction position)))))
 
 (put 'reference-explorer-ui-quick-handle-wheel 'scroll-command t)
 
@@ -2868,10 +2835,7 @@ PREVIOUS-POSITION is the window start and pixel vscroll before the input."
       (pcase result
         (`(return ,selected)
          (when selected
-           (reference-explorer-ui-thesaurus-accept selected)))
-        (`(interact ,preview ,window)
-         (reference-explorer-ui--activate-preview-interaction
-          preview window))))))
+           (reference-explorer-ui-thesaurus-accept selected)))))))
 
 (defun reference-explorer-ui--thesaurus-show-candidates
     (query candidates context source-bounds)
@@ -3024,24 +2988,6 @@ service."
   "H-." #'reference-explorer-ui-consult-open-reference
   "TAB" #'reference-explorer-ui-select-candidate
   "<tab>" #'reference-explorer-ui-select-candidate)
-
-(defun reference-explorer-ui-consult-activate-preview ()
-  "Exit Consult and promote its current preview for interaction."
-  (interactive)
-  (unless reference-explorer-ui--consult-toggle-tag
-    (user-error "No Consult reference session is active"))
-  (let ((preview reference-explorer-ui--active-temporary-preview)
-        (origin-window
-         (and reference-explorer-ui--consult-origin
-              (reference-explorer-context-window
-               reference-explorer-ui--consult-origin))))
-    (unless (and (reference-explorer-ui--preview-p preview)
-                 (reference-explorer-ui--preview-entry preview))
-      (user-error "The current candidate has no operable preview"))
-    (when (reference-explorer-ui--active-webkit-preview-xwidget)
-      (setq reference-explorer-ui--preview-interaction-request preview))
-    (throw reference-explorer-ui--consult-toggle-tag
-           (list 'interact preview origin-window))))
 
 (defun reference-explorer-ui--consult-run-source (&optional source)
   "Open the active Consult query through SOURCE or configured order."
@@ -3202,7 +3148,7 @@ service."
 
 (defun reference-explorer-ui-consult-docset (query mode &optional origin-window)
   "Select a docset result for QUERY and major MODE, then display it.
-ORIGIN-WINDOW receives focus after direct preview interaction ends."
+Use ORIGIN-WINDOW as the source window for the selected result."
   (let ((reference-explorer-ui--consult-origin
          (reference-explorer-context-create
           :query query
@@ -3215,10 +3161,7 @@ ORIGIN-WINDOW receives focus after direct preview interaction ends."
               result
             (reference-explorer-source-make-candidate
              'docset result reference-explorer-ui--consult-origin))
-          reference-explorer-ui--consult-origin)))
-      (`(interact ,preview ,window)
-       (reference-explorer-ui--activate-preview-interaction
-        preview window)))))
+          reference-explorer-ui--consult-origin))))))
 
 (defun reference-explorer-ui--docset-quick-options (queries mode)
   "Search every member of QUERIES in docsets selected for MODE."

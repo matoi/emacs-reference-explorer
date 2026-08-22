@@ -570,7 +570,7 @@
          (reference-explorer-ui--quick-session session)
          (reference-explorer-ui--active-temporary-preview preview))
     (cl-letf (((symbol-function
-                'reference-explorer-ui--activate-preview-interaction)
+                'reference-explorer-ui--activate-child-frame-preview-interaction)
               (lambda (candidate origin-window)
                  (setq activated (cons candidate origin-window))))
               ((symbol-function 'reference-explorer-ui--preview-live-p)
@@ -662,6 +662,16 @@
   (should (eq
            (reference-explorer-ui--quick-wheel-vertical-direction
             '(wheel-down position 1 2 (0.0 . 12.5))
+            'pixel-scroll-precision)
+           'end))
+  (should (eq
+           (reference-explorer-ui--quick-wheel-vertical-direction
+            '(wheel-up position 1 2 (4.0 . -0.25))
+            'pixel-scroll-precision)
+           'beginning))
+  (should (eq
+           (reference-explorer-ui--quick-wheel-vertical-direction
+            '(wheel-down position 1 2 (4.0 . 0.25))
             'pixel-scroll-precision)
            'end))
   (should-not
@@ -878,37 +888,6 @@
     (should quit)
     (should-not reference-explorer-ui--quick-session)))
 
-(ert-deftest reference-explorer-ui-promotes-shr-preview-to-selected-content ()
-  (let ((preview
-         (reference-explorer-ui--make-preview nil nil 'lookup-entry))
-        displayed)
-    (cl-letf (((symbol-function
-                'reference-explorer-ui--display-entry-for-interaction)
-               (lambda (entry origin-window)
-                 (setq displayed (cons entry origin-window)))))
-      (reference-explorer-ui--activate-preview-interaction
-       preview 'source-window))
-    (should (equal displayed '(lookup-entry . source-window)))))
-
-(ert-deftest reference-explorer-ui-promotes-live-shr-child-frame-in-place ()
-  (let* ((preview
-          (reference-explorer-ui--make-preview 'frame 'buffer 'lookup-entry))
-         (reference-explorer-ui--active-temporary-preview preview)
-         activated)
-    (cl-letf (((symbol-function 'reference-explorer-ui--preview-live-p)
-               (lambda (_preview) t))
-              ((symbol-function
-                'reference-explorer-ui--activate-child-frame-preview-interaction)
-               (lambda (candidate origin-window)
-                 (setq activated (cons candidate origin-window))))
-              ((symbol-function
-                'reference-explorer-ui--display-entry-for-interaction)
-               (lambda (&rest _arguments)
-                 (ert-fail "Live preview must not be committed to Popper"))))
-      (reference-explorer-ui--activate-preview-interaction
-       preview 'source-window))
-    (should (equal activated (cons preview 'source-window)))))
-
 (ert-deftest reference-explorer-ui-copies-shr-preview-selection ()
   (let (copied)
     (cl-letf (((symbol-function
@@ -1056,55 +1035,6 @@
         (should (eq shown 'entry))
         (funcall state 'exit nil)
         (should (equal deleted '(temporary-frame)))))))
-
-(ert-deftest reference-explorer-ui-consult-retains-promoted-preview ()
-  (let ((preview (reference-explorer-ui--make-preview 'frame 'buffer))
-        (reference-explorer-ui--preview-interaction-request nil)
-        closed)
-    (cl-letf (((symbol-function
-                'reference-explorer-ui--show-temporary-preview)
-               (lambda (_entry) preview))
-              ((symbol-function
-                'reference-explorer-ui--close-temporary-preview)
-               (lambda (_preview) (setq closed t))))
-      (let ((state (reference-explorer-ui--preview-state)))
-        (funcall state 'preview 'entry)
-        (setq reference-explorer-ui--preview-interaction-request preview)
-        (funcall state 'exit nil)
-        (should-not closed)
-        (should-not reference-explorer-ui--preview-interaction-request)))))
-
-(ert-deftest reference-explorer-ui-consult-promotes-shr-preview ()
-  (let* ((preview
-          (reference-explorer-ui--make-preview nil nil 'lookup-entry))
-         (reference-explorer-ui--active-temporary-preview preview)
-         (reference-explorer-ui--preview-interaction-request nil)
-         (reference-explorer-ui--consult-origin
-          (reference-explorer-context-create :window 'source-window))
-         (tag (make-symbol "reference-explorer-ui-test-control"))
-         (reference-explorer-ui--consult-toggle-tag tag))
-    (cl-letf (((symbol-function
-                'reference-explorer-ui--active-webkit-preview-xwidget)
-               (lambda () nil)))
-      (should
-       (equal (catch tag
-                (reference-explorer-ui-consult-activate-preview))
-              (list 'interact preview 'source-window))))
-    (should-not reference-explorer-ui--preview-interaction-request)))
-
-(ert-deftest reference-explorer-ui-consult-docset-promotes-preview ()
-  (let ((preview (reference-explorer-ui--make-preview 'frame 'buffer))
-        activated)
-    (cl-letf (((symbol-function 'reference-explorer-ui--consult-docset-read)
-               (lambda (_query _mode)
-                 (list 'interact preview 'origin-window)))
-              ((symbol-function
-                'reference-explorer-ui--activate-preview-interaction)
-               (lambda (candidate origin-window)
-                 (setq activated (cons candidate origin-window)))))
-      (reference-explorer-ui-consult-docset
-       "require" 'ruby-ts-mode 'origin-window))
-    (should (equal activated (cons preview 'origin-window)))))
 
 (ert-deftest reference-explorer-ui-thesaurus-consult-disables-preview ()
   (let ((candidate

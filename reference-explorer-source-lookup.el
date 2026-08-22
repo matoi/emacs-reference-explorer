@@ -610,8 +610,7 @@ QUERIES lists longest-to-shortest contextual inputs available with H-e/H-s."
         (reference-explorer-ui--consult-query-index
          (and initial (seq-position queries initial #'equal)))
         (continue t)
-        entry
-        interaction)
+        entry)
     (while continue
       (pcase (reference-explorer-source-lookup--consult-read initial mode)
         (`(toggle ,new-mode ,new-input)
@@ -619,21 +618,14 @@ QUERIES lists longest-to-shortest contextual inputs available with H-e/H-s."
                initial new-input))
         (`(return ,selected)
          (setq entry selected
-               continue nil))
-        (`(interact ,preview ,origin-window)
-         (setq interaction (cons preview origin-window)
                continue nil))))
-    (cond
-     (interaction
-      (reference-explorer-ui--activate-preview-interaction
-       (car interaction) (cdr interaction)))
-     (entry
+    (when entry
       (reference-explorer-candidate-commit
        (if (reference-explorer-candidate-p entry)
            entry
          (reference-explorer-source-make-candidate
           'lookup entry reference-explorer-ui--consult-origin))
-       reference-explorer-ui--consult-origin)))))
+       reference-explorer-ui--consult-origin))))
 
 ;;;###autoload
 (defun reference-explorer-source-lookup-consult ()
