@@ -325,6 +325,9 @@ The frame is clamped to the available height of its parent frame."
 (defvar reference-explorer-ui--docset-webkit-preview-caches
   (make-hash-table :test #'eq)
   "Reusable WebKit previews keyed by their parent graphical frame.")
+(defvar reference-explorer-ui--shr-preview-caches
+  (make-hash-table :test #'eq)
+  "Reusable SHR previews keyed by their parent graphical frame.")
 (defvar-local reference-explorer-ui--docset-preview-file nil
   "Temporary HTML file owned by the current WebKit preview buffer.")
 (defvar-local reference-explorer-ui--docset-preview-obsolete-files nil
@@ -779,6 +782,7 @@ Highlight literal QUERY occurrences when QUERY is non-nil."
         (setf (reference-explorer-ui--quick-session-preview session) nil)
         (when (eq preview reference-explorer-ui--active-temporary-preview)
           (setq reference-explorer-ui--active-temporary-preview nil))
+        (reference-explorer-ui--uncache-shr-preview-frame frame)
         (when (frame-live-p frame)
           (set-frame-parameter frame 'reference-explorer-ui-preview-buffer nil)
           (delete-frame frame))
@@ -1016,7 +1020,10 @@ depending on its private frame functions."
       (no-other-frame . t)
       (fullscreen . nil)
       (desktop-dont-save . t)
-      (inhibit-double-buffering . t)
+      ;; Keep frame updates double-buffered.  Disabling this can expose the
+      ;; parent frame's intermediate redraws while a preview child frame is
+      ;; created and resized, which appears as a full-frame blink on macOS.
+      (inhibit-double-buffering . nil)
       (visibility . nil)
       (background-color . ,(face-background background-face nil t)))))
 
@@ -1345,6 +1352,40 @@ Return (BUFFER . XWIDGET)."
           :warning))
        nil))))
 
+(defun reference-explorer-ui--shr-preview-cache (parent-frame)
+  "Return the reusable SHR preview belonging to PARENT-FRAME."
+  (gethash parent-frame reference-explorer-ui--shr-preview-caches))
+
+(defun reference-explorer-ui--cache-shr-preview (parent-frame preview)
+  "Cache PREVIEW as the reusable SHR view for PARENT-FRAME."
+  (puthash parent-frame preview reference-explorer-ui--shr-preview-caches)
+  preview)
+
+(defun reference-explorer-ui--cached-shr-preview-p (preview)
+  "Return non-nil when PREVIEW is its parent frame's reusable SHR view."
+  (and
+   (reference-explorer-ui--preview-p preview)
+   (let (cached)
+     (maphash
+      (lambda (_parent-frame candidate)
+        (when (eq preview candidate)
+          (setq cached t)))
+      reference-explorer-ui--shr-preview-caches)
+     cached)))
+
+(defun reference-explorer-ui--uncache-shr-preview-frame (frame)
+  "Remove and return the cached SHR preview whose child frame is FRAME."
+  (let (parent-frame preview)
+    (maphash
+     (lambda (candidate-parent candidate-preview)
+       (when (eq frame (reference-explorer-ui--preview-frame candidate-preview))
+         (setq parent-frame candidate-parent
+               preview candidate-preview)))
+     reference-explorer-ui--shr-preview-caches)
+    (when parent-frame
+      (remhash parent-frame reference-explorer-ui--shr-preview-caches))
+    preview))
+
 (defun reference-explorer-ui--show-temporary-shr-preview-at-position
     (entry position anchor-window &optional query)
   "Show ENTRY near pixel POSITION relative to ANCHOR-WINDOW's frame.
@@ -1374,123 +1415,154 @@ Highlight literal QUERY occurrences in the rendered content."
                  (reference-explorer-ui--preview-horizontal-layout
                   position
                   (+ configured-width margin-pixels)
-                  (+ minimum-width margin-pixels)))
-                (buffer-name
-                 (generate-new-buffer-name
-                  reference-explorer-ui-preview-buffer-name))
-                (buffer
-                 (reference-explorer-ui--prepare-preview-buffer
-                  (reference-explorer-ui--render-entry entry buffer-name)
-                  (reference-explorer-ui--preview-query-for-entry
-                   entry query))))
-      (with-current-buffer buffer
-        (setq-local mode-line-format nil
-                    header-line-format nil
-                    cursor-type nil))
-      (let ((preview nil)
-            window
-            frame)
+                  (+ minimum-width margin-pixels))))
+      (let* ((cached
+              (reference-explorer-ui--shr-preview-cache parent-frame))
+             (reuse
+              (and (reference-explorer-ui--preview-live-p cached)
+                   (eq (frame-parent
+                        (reference-explorer-ui--preview-frame cached))
+                       parent-frame)))
+             (old-buffer
+              (and reuse (reference-explorer-ui--preview-buffer cached)))
+             (buffer-name
+              (generate-new-buffer-name
+               reference-explorer-ui-preview-buffer-name))
+             (buffer
+              (reference-explorer-ui--prepare-preview-buffer
+               (reference-explorer-ui--render-entry entry buffer-name)
+               (reference-explorer-ui--preview-query-for-entry entry query)))
+             (preview nil)
+             window
+             frame)
+        (with-current-buffer buffer
+          (setq-local mode-line-format nil
+                      header-line-format nil
+                      cursor-type nil))
         (unwind-protect
-            (let ((parameters
-                   (reference-explorer-ui--child-frame-parameters
-                    parent-frame 'reference-explorer-ui-preview
-                    reference-explorer-ui--preview-border-width)))
-              (when-let*
-                  ((shown-window
-                   (setq window
-                          (save-selected-window
-                            (let ((display-buffer-overriding-action nil)
-                                  (display-buffer-alist nil))
-                              (display-buffer
-                               buffer
-                               `((display-buffer-in-child-frame
-                                  display-buffer-no-window)
-                                 (child-frame-parameters . ,parameters)
-                                 (allow-no-window . t)
-                                 (no-other-window . t)
-                                 (no-delete-other-windows . t)))))))
-                  ((window-live-p shown-window))
-                  (child-frame
-                   (setq frame (window-frame shown-window)))
-                  ((eq (frame-parent child-frame) parent-frame)))
+            (progn
+              (if reuse
+                  (progn
+                    (setq frame (reference-explorer-ui--preview-frame cached)
+                          window (frame-selected-window frame))
+                    (unless (window-live-p window)
+                      (error "Cached SHR preview window is unavailable"))
+                    (when (frame-visible-p frame)
+                      (make-frame-invisible frame t))
+                    (set-window-dedicated-p window nil)
+                    (set-window-buffer window buffer))
+                (let* ((parameters
+                        (reference-explorer-ui--child-frame-parameters
+                         parent-frame 'reference-explorer-ui-preview
+                         reference-explorer-ui--preview-border-width))
+                       (shown-window
+                        (save-selected-window
+                          (let ((display-buffer-overriding-action nil)
+                                (display-buffer-alist nil))
+                            (display-buffer
+                             buffer
+                             `((display-buffer-in-child-frame
+                                display-buffer-no-window)
+                               (child-frame-parameters . ,parameters)
+                               (allow-no-window . t)
+                               (no-other-window . t)
+                               (no-delete-other-windows . t)))))))
+                  (when (window-live-p shown-window)
+                    (setq window shown-window
+                          frame (window-frame shown-window))
+                    (unless (eq (frame-parent frame) parent-frame)
+                      (setq window nil)))))
+              (when (window-live-p window)
+                ;; `set-window-buffer' can reapply buffer- or mode-specific
+                ;; fringe widths to a reused window.  Preview child frames do
+                ;; not use fringe indicators, so pin both sides explicitly.
+                (set-window-fringes window 0 0 nil)
                 (set-window-margins
                  window reference-explorer-ui-preview-margin-width
                  reference-explorer-ui-preview-margin-width)
                 (let* ((line-height
-                        (window-default-line-height anchor-window))
-                       (horizontal-side (car horizontal-layout))
-                       (max-width
-                        (max char-width
-                             (- (cdr horizontal-layout) margin-pixels)))
-                       (parent-height (frame-pixel-height parent-frame))
-                       (max-height
-                        (min (reference-explorer-ui--preview-max-height
-                              line-height parent-height)
-                             (if (eq preview-kind 'docset)
-                                 (* reference-explorer-ui-docset-preview-max-height
-                                    line-height)
-                               parent-height)))
-                       (_initial-size
-                        (set-frame-size
-                         frame (+ max-width margin-pixels) max-height t))
-                       (size
-                        (reference-explorer-ui--preview-text-pixel-size
-                         window buffer max-width max-height))
-                       (width
-                        (reference-explorer-ui--preview-content-width
-                         (car size) max-width char-width
-                         (and (eq preview-kind 'docset) minimum-width)))
-                       ;; Width must be applied before measuring height.  With
-                       ;; a non-nil X-LIMIT, `window-text-pixel-size' ignores
-                       ;; text beyond that limit instead of counting the
-                       ;; visual lines it wraps to.
-                       (_width-sized
-                        (set-frame-size
-                         frame (+ width margin-pixels
-                                  reference-explorer-ui--preview-horizontal-overhead)
-                         max-height t))
-                       (height
-                        (max line-height
-                             (reference-explorer-ui--preview-wrapped-height
-                              window buffer max-height)))
-                       (frame-width
-                        (+ width
-                           margin-pixels
-                           reference-explorer-ui--preview-horizontal-overhead))
-                       (frame-height
-                        (+ height
-                           reference-explorer-ui--preview-vertical-overhead))
-                       (left
-                        (reference-explorer-ui--preview-left
-                         position frame-width horizontal-side))
-                       (top
-                        (reference-explorer-ui--preview-top
-                         position frame-height parent-height)))
-                  (set-window-dedicated-p window t)
-                  (set-frame-size frame frame-width frame-height t)
-                  (set-frame-parameter
-                   frame 'reference-explorer-ui-preview-buffer buffer)
-                  (set-frame-position frame left top)
-                  (redirect-frame-focus frame parent-frame)
-                  (reference-explorer-ui--style-child-frame
-                   frame 'reference-explorer-ui-preview-border)
-                  (make-frame-visible frame)
-                  (setq preview
-                        (reference-explorer-ui--make-preview
-                         frame buffer entry))
-                  (setq reference-explorer-ui--active-temporary-preview
-                        preview)
-                  ;; Every extracted docset entry and Lookup article starts at
-                  ;; `point-min'.  Explicit window state keeps fitting and
-                  ;; child-frame creation from vertically centering it.
-                  (set-window-start window (point-min) t)
-                  (set-window-point window (point-min)))))
+                      (window-default-line-height anchor-window))
+                     (horizontal-side (car horizontal-layout))
+                     (max-width
+                      (max char-width
+                           (- (cdr horizontal-layout) margin-pixels)))
+                     (parent-height (frame-pixel-height parent-frame))
+                     (max-height
+                      (min (reference-explorer-ui--preview-max-height
+                            line-height parent-height)
+                           (if (eq preview-kind 'docset)
+                               (* reference-explorer-ui-docset-preview-max-height
+                                  line-height)
+                             parent-height)))
+                     (_initial-size
+                      (set-frame-size
+                       frame (+ max-width margin-pixels) max-height t))
+                     (size
+                      (reference-explorer-ui--preview-text-pixel-size
+                       window buffer max-width max-height))
+                     (width
+                      (reference-explorer-ui--preview-content-width
+                       (car size) max-width char-width
+                       (and (eq preview-kind 'docset) minimum-width)))
+                     ;; Width must be applied before measuring height.  With
+                     ;; a non-nil X-LIMIT, `window-text-pixel-size' ignores
+                     ;; text beyond that limit instead of counting the
+                     ;; visual lines it wraps to.
+                     (_width-sized
+                      (set-frame-size
+                       frame (+ width margin-pixels
+                                reference-explorer-ui--preview-horizontal-overhead)
+                       max-height t))
+                     (height
+                      (max line-height
+                           (reference-explorer-ui--preview-wrapped-height
+                            window buffer max-height)))
+                     (frame-width
+                      (+ width margin-pixels
+                         reference-explorer-ui--preview-horizontal-overhead))
+                     (frame-height
+                      (+ height
+                         reference-explorer-ui--preview-vertical-overhead))
+                     (left
+                      (reference-explorer-ui--preview-left
+                       position frame-width horizontal-side))
+                     (top
+                      (reference-explorer-ui--preview-top
+                       position frame-height parent-height)))
+                (set-window-dedicated-p window t)
+                (set-frame-size frame frame-width frame-height t)
+                (set-frame-parameter
+                 frame 'reference-explorer-ui-preview-buffer buffer)
+                (set-frame-position frame left top)
+                (redirect-frame-focus frame parent-frame)
+                (reference-explorer-ui--style-child-frame
+                 frame 'reference-explorer-ui-preview-border)
+                ;; Establish the final window state before exposing the frame.
+                (set-window-start window (point-min) t)
+                (set-window-point window (point-min))
+                (setq preview
+                      (if reuse
+                          cached
+                        (reference-explorer-ui--make-preview frame buffer entry)))
+                (setf (reference-explorer-ui--preview-buffer preview) buffer
+                      (reference-explorer-ui--preview-entry preview) entry)
+                (reference-explorer-ui--cache-shr-preview
+                 parent-frame preview)
+                (setq reference-explorer-ui--active-temporary-preview preview)
+                (make-frame-visible frame)
+                (when (and (buffer-live-p old-buffer)
+                           (not (eq old-buffer buffer)))
+                  (reference-explorer-ui--retire-preview-buffer old-buffer)))))
           (unless preview
+            (when frame
+              (reference-explorer-ui--uncache-shr-preview-frame frame))
             (when (and (frame-live-p frame)
                        (not (eq frame parent-frame)))
               (delete-frame frame))
+            (when (buffer-live-p old-buffer)
+              (reference-explorer-ui--retire-preview-buffer old-buffer))
             (when (buffer-live-p buffer)
-              (kill-buffer buffer))))
+              (reference-explorer-ui--retire-preview-buffer buffer))))
         preview))))
 
 (defun reference-explorer-ui--show-temporary-preview-at-position
@@ -1522,8 +1594,10 @@ dedicated child-frame window cannot recursively delete that frame."
               (frame-parameter frame
                                'reference-explorer-ui-preview-buffer)))
     (when-let ((cached
-                (reference-explorer-ui--uncache-docset-webkit-preview-frame
-                 frame)))
+                (or
+                 (reference-explorer-ui--uncache-docset-webkit-preview-frame
+                  frame)
+                 (reference-explorer-ui--uncache-shr-preview-frame frame))))
       (when (eq cached reference-explorer-ui--active-temporary-preview)
         (setq reference-explorer-ui--active-temporary-preview nil))
       (when (eq cached reference-explorer-ui--preview-interaction)
@@ -1569,9 +1643,10 @@ the next candidate is drawn, or the old native view remains visible."
       (setq reference-explorer-ui--active-temporary-preview nil))
     (let ((frame (reference-explorer-ui--preview-frame preview))
           (buffer (reference-explorer-ui--preview-buffer preview)))
-      (if (reference-explorer-ui--cached-docset-webkit-preview-p preview)
-          ;; Reusing one native view avoids both stale pixels and a race where
-          ;; a queued WebKit event reaches a model that has just been killed.
+      (if (or (reference-explorer-ui--cached-docset-webkit-preview-p preview)
+              (reference-explorer-ui--cached-shr-preview-p preview))
+          ;; Reusing child frames avoids native frame churn.  For WebKit it
+          ;; also avoids stale pixels and queued events reaching a dead model.
           (when (frame-live-p frame)
             (make-frame-invisible frame t))
         (when (frame-live-p frame)

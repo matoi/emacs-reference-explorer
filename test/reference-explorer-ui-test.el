@@ -902,6 +902,7 @@
         (cl-letf (((symbol-function 'frame-live-p) (lambda (_frame) t))
                   ((symbol-function 'frame-parent)
                    (lambda (_frame) 'parent-frame))
+                  ((symbol-function 'frame-visible-p) (lambda (_frame) t))
                   ((symbol-function 'make-frame-invisible)
                    (lambda (frame &optional _force)
                      (setq hidden frame))))
@@ -915,6 +916,122 @@
                    preview)))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
+
+(ert-deftest reference-explorer-ui-hides-reusable-shr-preview ()
+  (let* ((buffer (generate-new-buffer " *environment-preview-shr*"))
+         (preview
+          (reference-explorer-ui--make-preview 'preview-frame buffer))
+         (reference-explorer-ui--shr-preview-caches
+          (make-hash-table :test #'eq))
+         hidden)
+    (unwind-protect
+        (cl-letf (((symbol-function 'frame-live-p) (lambda (_frame) t))
+                  ((symbol-function 'make-frame-invisible)
+                   (lambda (frame &optional _force)
+                     (setq hidden frame))))
+          (reference-explorer-ui--cache-shr-preview
+           'parent-frame preview)
+          (reference-explorer-ui--close-temporary-preview preview)
+          (should (eq hidden 'preview-frame))
+          (should (buffer-live-p buffer))
+          (should (eq
+                   (reference-explorer-ui--shr-preview-cache 'parent-frame)
+                   preview)))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest reference-explorer-ui-reuses-shr-preview-child-frame ()
+  (let* ((old-buffer (generate-new-buffer " *environment-preview-old*"))
+         (new-buffer nil)
+         (preview
+          (reference-explorer-ui--make-preview
+           'preview-frame old-buffer 'old-entry))
+         (reference-explorer-ui--shr-preview-caches
+          (make-hash-table :test #'eq))
+         switched-buffer
+         fringes
+         hidden
+         visible
+         displayed)
+    (reference-explorer-ui--cache-shr-preview 'parent-frame preview)
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+                  ((symbol-function 'window-live-p) (lambda (_window) t))
+                  ((symbol-function 'window-frame)
+                   (lambda (_window) 'parent-frame))
+                  ((symbol-function 'frame-char-width) (lambda (_frame) 10))
+                  ((symbol-function 'frame-live-p) (lambda (_frame) t))
+                  ((symbol-function 'frame-parent)
+                   (lambda (_frame) 'parent-frame))
+                  ((symbol-function 'frame-selected-window)
+                   (lambda (_frame) 'preview-window))
+                  ((symbol-function 'frame-visible-p) (lambda (_frame) t))
+                  ((symbol-function 'reference-explorer-ui--render-entry)
+                   (lambda (_entry _name)
+                     (setq new-buffer
+                           (generate-new-buffer
+                            " *environment-preview-new*"))))
+                  ((symbol-function
+                    'reference-explorer-ui--preview-query-for-entry)
+                   (lambda (&rest _) nil))
+                  ((symbol-function
+                    'reference-explorer-ui--prepare-preview-buffer)
+                   (lambda (buffer &optional _query) buffer))
+                  ((symbol-function 'make-frame-invisible)
+                   (lambda (frame &optional _force) (setq hidden frame)))
+                  ((symbol-function 'set-window-dedicated-p) #'ignore)
+                  ((symbol-function 'set-window-buffer)
+                   (lambda (_window buffer) (setq switched-buffer buffer)))
+                  ((symbol-function 'set-window-fringes)
+                   (lambda (window left right outside-margins)
+                     (setq fringes
+                           (list window left right outside-margins))))
+                  ((symbol-function 'set-window-margins) #'ignore)
+                  ((symbol-function 'window-default-line-height)
+                   (lambda (_window) 20))
+                  ((symbol-function 'frame-pixel-height)
+                   (lambda (_frame) 800))
+                  ((symbol-function 'set-frame-size) #'ignore)
+                  ((symbol-function
+                    'reference-explorer-ui--preview-text-pixel-size)
+                   (lambda (&rest _) '(100 . 40)))
+                  ((symbol-function
+                    'reference-explorer-ui--preview-wrapped-height)
+                   (lambda (&rest _) 40))
+                  ((symbol-function 'set-frame-parameter) #'ignore)
+                  ((symbol-function 'set-frame-position) #'ignore)
+                  ((symbol-function 'redirect-frame-focus) #'ignore)
+                  ((symbol-function
+                    'reference-explorer-ui--style-child-frame)
+                   #'ignore)
+                  ((symbol-function 'set-window-start) #'ignore)
+                  ((symbol-function 'set-window-point) #'ignore)
+                  ((symbol-function 'make-frame-visible)
+                   (lambda (frame) (setq visible frame)))
+                  ((symbol-function 'display-buffer)
+                   (lambda (&rest _)
+                     (setq displayed t)
+                     (error "Created a replacement child frame"))))
+          (let ((result
+                 (reference-explorer-ui--show-temporary-shr-preview-at-position
+                  'new-entry '(100 80 1000 10) 'anchor-window)))
+            (should (eq result preview))
+            (should-not displayed)
+            (should (eq hidden 'preview-frame))
+            (should (eq visible 'preview-frame))
+            (should (eq switched-buffer new-buffer))
+            (should (equal fringes '(preview-window 0 0 nil)))
+            (should-not (buffer-live-p old-buffer))
+            (should (eq
+                     (reference-explorer-ui--preview-buffer preview)
+                     new-buffer))
+            (should (eq
+                     (reference-explorer-ui--preview-entry preview)
+                     'new-entry))))
+      (when (buffer-live-p old-buffer)
+        (kill-buffer old-buffer))
+      (when (buffer-live-p new-buffer)
+        (kill-buffer new-buffer)))))
 
 (ert-deftest reference-explorer-ui-keeps-separate-webkit-cache-per-frame ()
   (let ((reference-explorer-ui--docset-webkit-preview-caches
@@ -944,6 +1061,20 @@
              first))
     (should-not (reference-explorer-ui--docset-webkit-cache 'parent-a))
     (should (eq (reference-explorer-ui--docset-webkit-cache 'parent-b)
+                second))))
+
+(ert-deftest reference-explorer-ui-uncaches-only-deleted-shr-frame ()
+  (let ((reference-explorer-ui--shr-preview-caches
+         (make-hash-table :test #'eq))
+        (first (reference-explorer-ui--make-preview 'child-a 'buffer-a))
+        (second (reference-explorer-ui--make-preview 'child-b 'buffer-b)))
+    (reference-explorer-ui--cache-shr-preview 'parent-a first)
+    (reference-explorer-ui--cache-shr-preview 'parent-b second)
+    (should (eq
+             (reference-explorer-ui--uncache-shr-preview-frame 'child-a)
+             first))
+    (should-not (reference-explorer-ui--shr-preview-cache 'parent-a))
+    (should (eq (reference-explorer-ui--shr-preview-cache 'parent-b)
                 second))))
 
 (ert-deftest reference-explorer-ui-webkit-load-cleans-only-obsolete-html ()
@@ -1007,6 +1138,13 @@
          (display (concat "\nfirst\n" selected "third\n")))
     (should (equal (reference-explorer-ui--vertico-selection display)
                    '(2 "second item")))))
+
+(ert-deftest reference-explorer-ui-child-frames-keep-double-buffering ()
+  (let ((parameters
+         (reference-explorer-ui--child-frame-parameters
+          (selected-frame) 'reference-explorer-ui-preview 1)))
+    (should (assq 'inhibit-double-buffering parameters))
+    (should-not (alist-get 'inhibit-double-buffering parameters))))
 
 (ert-deftest reference-explorer-ui-preview-uses-horizontal-space-without-overlap ()
   (let ((reference-explorer-ui-preview-max-width 80))
