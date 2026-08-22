@@ -129,6 +129,22 @@
               #'reference-explorer-ui-preview-scroll-up))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-V"))
               #'reference-explorer-ui-preview-scroll-down))
+  (dolist (key '("<wheel-up>" "<wheel-down>"
+                 "<wheel-left>" "<wheel-right>"
+                 "<double-wheel-up>" "<double-wheel-down>"
+                 "<double-wheel-left>" "<double-wheel-right>"
+                 "<triple-wheel-up>" "<triple-wheel-down>"
+                 "<triple-wheel-left>" "<triple-wheel-right>"
+                 "<mouse-4>" "<mouse-5>" "<mouse-6>" "<mouse-7>"
+                 "<touch-end>"))
+    (should (eq (lookup-key reference-explorer-ui-quick-map (kbd key))
+                #'reference-explorer-ui-quick-ignore-wheel)))
+  (dolist (command '(pixel-scroll-precision
+                     pixel-scroll-start-momentum
+                     mwheel-scroll))
+    (should (eq (lookup-key reference-explorer-ui-quick-map
+                            (vector 'remap command))
+                #'reference-explorer-ui-quick-ignore-wheel)))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-i"))
               #'reference-explorer-ui-quick-activate-preview))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "TAB"))
@@ -550,7 +566,9 @@
                  (setq activated (cons candidate origin-window))))
               ((symbol-function
                 'reference-explorer-ui--active-webkit-preview-xwidget)
-               (lambda () 'preview-xwidget)))
+               (lambda () 'preview-xwidget))
+              ((symbol-function 'reference-explorer-ui--preview-live-p)
+               (lambda (_preview) t)))
       (reference-explorer-ui-quick-activate-preview))
     (should exited)
     (should-not (reference-explorer-ui--quick-session-preview session))
@@ -567,6 +585,39 @@
       (reference-explorer-ui--activate-preview-interaction
        preview 'source-window))
     (should (equal displayed '(lookup-entry . source-window)))))
+
+(ert-deftest reference-explorer-ui-promotes-live-shr-child-frame-in-place ()
+  (let* ((preview
+          (reference-explorer-ui--make-preview 'frame 'buffer 'lookup-entry))
+         (reference-explorer-ui--active-temporary-preview preview)
+         activated)
+    (cl-letf (((symbol-function 'reference-explorer-ui--preview-live-p)
+               (lambda (_preview) t))
+              ((symbol-function
+                'reference-explorer-ui--activate-child-frame-preview-interaction)
+               (lambda (candidate origin-window)
+                 (setq activated (cons candidate origin-window))))
+              ((symbol-function
+                'reference-explorer-ui--display-entry-for-interaction)
+               (lambda (&rest _arguments)
+                 (ert-fail "Live preview must not be committed to Popper"))))
+      (reference-explorer-ui--activate-preview-interaction
+       preview 'source-window))
+    (should (equal activated (cons preview 'source-window)))))
+
+(ert-deftest reference-explorer-ui-copies-shr-preview-selection ()
+  (let (copied)
+    (cl-letf (((symbol-function
+                'reference-explorer-ui--active-webkit-preview-xwidget)
+               (lambda () nil))
+              ((symbol-function 'use-region-p) (lambda () t))
+              ((symbol-function 'region-beginning) (lambda () 10))
+              ((symbol-function 'region-end) (lambda () 20))
+              ((symbol-function 'kill-ring-save)
+               (lambda (beginning end &optional _region)
+                 (setq copied (cons beginning end)))))
+      (reference-explorer-ui-preview-copy-selection))
+    (should (equal copied '(10 . 20)))))
 
 (ert-deftest reference-explorer-ui-quick-list-position-stays-inside-frame ()
   (let ((session

@@ -315,9 +315,9 @@ The frame is clamped to the available height of its parent frame."
 (defvar reference-explorer-ui--active-temporary-preview nil
   "Most recently displayed temporary reference preview.")
 (defvar reference-explorer-ui--preview-interaction nil
-  "WebKit preview currently promoted for direct user interaction.")
+  "Preview currently promoted for direct user interaction.")
 (defvar reference-explorer-ui--preview-interaction-origin-window nil
-  "Window to restore after direct WebKit preview interaction.")
+  "Window to restore after direct preview interaction.")
 (defvar reference-explorer-ui--preview-interaction-request nil
   "Preview a Consult state function must retain while its minibuffer exits.")
 (defvar reference-explorer-ui--docset-webkit-warning-shown nil
@@ -1704,7 +1704,7 @@ DIRECTION is `up' to reveal later text or `down' to reveal earlier text."
         (car (get-buffer-xwidgets buffer))))))
 
 (defun reference-explorer-ui-preview-copy-selection ()
-  "Copy the active WebKit preview selection to the kill ring and clipboard."
+  "Copy the active preview selection to the kill ring and clipboard."
   (interactive)
   (if-let ((xwidget (reference-explorer-ui--active-webkit-preview-xwidget)))
       (xwidget-webkit-execute-script
@@ -1716,28 +1716,29 @@ DIRECTION is `up' to reveal later text or `down' to reveal earlier text."
                (kill-new selection)
                (message "Copied preview selection"))
            (message "The preview has no selected text"))))
-    (user-error "The active reference preview is not a WebKit preview")))
+    (if (use-region-p)
+        (kill-ring-save (region-beginning) (region-end))
+      (user-error "The preview has no selected text"))))
 
 (defvar-keymap reference-explorer-ui-preview-interaction-mode-map
-  :doc "Keymap active while directly operating a reference WebKit preview."
+  :doc "Keymap active while directly operating a reference preview."
   "C-g" #'reference-explorer-ui-preview-exit-interaction
   "H-q" #'reference-explorer-ui-preview-exit-interaction
   "H-w" #'reference-explorer-ui-preview-copy-selection
   "M-w" #'reference-explorer-ui-preview-copy-selection)
 
 (define-minor-mode reference-explorer-ui-preview-interaction-mode
-  "Allow direct mouse and keyboard operation of a reference WebKit preview."
+  "Allow direct mouse and keyboard operation of a reference preview."
   :init-value nil
   :lighter " RefInteract"
   :keymap reference-explorer-ui-preview-interaction-mode-map)
 
-(defun reference-explorer-ui--activate-webkit-preview-interaction
+(defun reference-explorer-ui--activate-child-frame-preview-interaction
     (preview origin-window)
-  "Promote WebKit PREVIEW for direct interaction, returning to ORIGIN-WINDOW."
+  "Promote child-frame PREVIEW for interaction, returning to ORIGIN-WINDOW."
   (unless (and (eq preview reference-explorer-ui--active-temporary-preview)
-               (reference-explorer-ui--preview-live-p preview)
-               (reference-explorer-ui--active-webkit-preview-xwidget))
-    (user-error "The active reference preview is not an interactive WebKit preview"))
+               (reference-explorer-ui--preview-live-p preview))
+    (user-error "The active reference preview is not interactive"))
   (let* ((frame (reference-explorer-ui--preview-frame preview))
          (buffer (reference-explorer-ui--preview-buffer preview)))
     (setq reference-explorer-ui--preview-interaction preview
@@ -1750,7 +1751,7 @@ DIRECTION is `up' to reveal later text or `down' to reveal earlier text."
     (set-frame-parameter frame 'no-focus-on-map nil)
     (redirect-frame-focus frame nil)
     (select-frame-set-input-focus frame)
-    (message "Preview interaction: drag to select; M-w/H-w copies; C-g/H-q exits")))
+    (message "Preview interaction: scroll directly; C-g/H-q exits")))
 
 (defun reference-explorer-ui--display-entry-for-interaction
     (entry origin-window)
@@ -1769,14 +1770,13 @@ DIRECTION is `up' to reveal later text or `down' to reveal earlier text."
 (defun reference-explorer-ui--activate-preview-interaction
     (preview origin-window)
   "Promote PREVIEW to an operable display, returning to ORIGIN-WINDOW.
-WebKit previews retain their rendered child frame.  Other previews are
-committed to a selected Popper window."
+Live temporary previews retain their rendered child frame.  Other previews
+are committed to a selected Popper window."
   (unless (reference-explorer-ui--preview-p preview)
     (user-error "No reference preview is available"))
   (if (and (eq preview reference-explorer-ui--active-temporary-preview)
-           (reference-explorer-ui--preview-live-p preview)
-           (reference-explorer-ui--active-webkit-preview-xwidget))
-      (reference-explorer-ui--activate-webkit-preview-interaction
+           (reference-explorer-ui--preview-live-p preview))
+      (reference-explorer-ui--activate-child-frame-preview-interaction
        preview origin-window)
     (if-let ((entry (reference-explorer-ui--preview-entry preview)))
         (reference-explorer-ui--display-entry-for-interaction
@@ -1784,7 +1784,7 @@ committed to a selected Popper window."
       (user-error "The reference preview has no operable content"))))
 
 (defun reference-explorer-ui-preview-exit-interaction ()
-  "End direct WebKit preview interaction and return to its origin window."
+  "End direct preview interaction and return to its origin window."
   (interactive)
   (let ((preview reference-explorer-ui--preview-interaction)
         (origin-window reference-explorer-ui--preview-interaction-origin-window))
@@ -2357,10 +2357,10 @@ Selection styling is applied by the renderer across the complete visual row."
         (user-error "The current candidate has no operable preview"))
       (let ((origin-window
              (reference-explorer-ui--quick-session-source-window session)))
-        ;; A live WebKit view is itself promoted.  Other renderers are closed
-        ;; normally and recreated as selected, committed Popper content.
+        ;; A live temporary view is itself promoted.  A preview that has not
+        ;; been displayed in a child frame is recreated as committed content.
         (when (and (eq preview reference-explorer-ui--active-temporary-preview)
-                   (reference-explorer-ui--active-webkit-preview-xwidget))
+                   (reference-explorer-ui--preview-live-p preview))
           (setf (reference-explorer-ui--quick-session-preview session) nil))
         (if-let ((exit
                   (reference-explorer-ui--quick-session-exit-function session)))
@@ -2368,6 +2368,10 @@ Selection styling is applied by the renderer across the complete visual row."
           (reference-explorer-ui--quick-cleanup))
         (reference-explorer-ui--activate-preview-interaction
          preview origin-window)))))
+
+(defun reference-explorer-ui-quick-ignore-wheel ()
+  "Ignore wheel input while the Quick candidate session is active."
+  (interactive))
 
 (defun reference-explorer-ui--quick-context ()
   "Return a reference context for the active quick reference query."
@@ -2410,6 +2414,27 @@ Selection styling is applied by the renderer across the complete visual row."
   "H-e" #'reference-explorer-ui-quick-expand-query
   "H-v" #'reference-explorer-ui-preview-scroll-up
   "H-V" #'reference-explorer-ui-preview-scroll-down
+  "<remap> <pixel-scroll-precision>" #'reference-explorer-ui-quick-ignore-wheel
+  "<remap> <pixel-scroll-start-momentum>"
+  #'reference-explorer-ui-quick-ignore-wheel
+  "<remap> <mwheel-scroll>" #'reference-explorer-ui-quick-ignore-wheel
+  "<wheel-up>" #'reference-explorer-ui-quick-ignore-wheel
+  "<wheel-down>" #'reference-explorer-ui-quick-ignore-wheel
+  "<wheel-left>" #'reference-explorer-ui-quick-ignore-wheel
+  "<wheel-right>" #'reference-explorer-ui-quick-ignore-wheel
+  "<double-wheel-up>" #'reference-explorer-ui-quick-ignore-wheel
+  "<double-wheel-down>" #'reference-explorer-ui-quick-ignore-wheel
+  "<double-wheel-left>" #'reference-explorer-ui-quick-ignore-wheel
+  "<double-wheel-right>" #'reference-explorer-ui-quick-ignore-wheel
+  "<triple-wheel-up>" #'reference-explorer-ui-quick-ignore-wheel
+  "<triple-wheel-down>" #'reference-explorer-ui-quick-ignore-wheel
+  "<triple-wheel-left>" #'reference-explorer-ui-quick-ignore-wheel
+  "<triple-wheel-right>" #'reference-explorer-ui-quick-ignore-wheel
+  "<mouse-4>" #'reference-explorer-ui-quick-ignore-wheel
+  "<mouse-5>" #'reference-explorer-ui-quick-ignore-wheel
+  "<mouse-6>" #'reference-explorer-ui-quick-ignore-wheel
+  "<mouse-7>" #'reference-explorer-ui-quick-ignore-wheel
+  "<touch-end>" #'reference-explorer-ui-quick-ignore-wheel
   "H-i" #'reference-explorer-ui-quick-activate-preview
   "H-q" #'reference-explorer-ui-quick-quit
   "C-g" #'reference-explorer-ui-quick-quit
