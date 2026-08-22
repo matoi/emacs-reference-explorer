@@ -862,7 +862,7 @@ Highlight literal QUERY occurrences when QUERY is non-nil."
                   :index 0
                   :source-window (reference-explorer-context-window context)
                   :source-marker (reference-explorer-context-marker context)
-                  :help "TAB/H-i:Popper表示  H-q:quit"))
+                  :help "TAB/H-i:show in Popper  H-q:quit"))
               (when-let ((result
                           (reference-explorer-ui--read-source-candidate
                            source results context)))
@@ -1876,7 +1876,7 @@ Prefix the summary with STATUS when it is non-nil."
            (or (and reference-explorer-ui--quick-session
                     (reference-explorer-ui--quick-session-help
                      reference-explorer-ui--quick-session))
-               "H-s/e:検索語を縮小/拡大  H-i:Popper表示  M-m:Consult")))
+               "H-s/e:shorten/expand query  H-i:show in Popper  M-m:Consult")))
 
 (defun reference-explorer-ui--quick-visible-entries (session)
   "Return visible entries for quick reference SESSION and update its offset."
@@ -1989,7 +1989,7 @@ Selection styling is applied by the renderer across the complete visual row."
                          start (point)
                          'reference-explorer-ui-quick-current 'append))))
         (when (null visible)
-          (insert (propertize "一致なし" 'face 'shadow)))
+          (insert (propertize "No matches" 'face 'shadow)))
         (goto-char (point-min))
         ;; Keep buffer point on the selected candidate.  The child window has
         ;; no visible cursor, but its point still controls redisplay.
@@ -2348,8 +2348,8 @@ Selection styling is applied by the renderer across the complete visual row."
                                   (+ old-index delta)))))
       (if (= old-index new-index)
           (reference-explorer-ui--quick-show-help
-           (if (> delta 0) "これ以上縮小できません"
-             "これ以上拡大できません"))
+           (if (> delta 0) "Cannot shorten the query any further"
+             "Cannot expand the query any further"))
         (pcase-let ((`(,query . ,entries) (nth new-index options)))
           (setf (reference-explorer-ui--quick-session-query-index session)
                 new-index
@@ -2857,7 +2857,7 @@ PREVIOUS-POSITION is the window start and pixel vscroll before the input."
       :consult-function
       (lambda (entries)
         (reference-explorer-ui--consult-thesaurus entries context))
-      :help "TAB:置換  M-m:Consult  Embark:その他の操作"))))
+      :help "TAB:replace  M-m:Consult  Embark:more actions"))))
 
 (defun reference-explorer-ui--query-bounds-at-point (query)
   "Return buffer bounds matching extracted QUERY around point."
@@ -3044,8 +3044,8 @@ service."
                     (+ old-index delta)))))
     (if (= old-index new-index)
         (message (if (> delta 0)
-                     "これ以上縮小できません"
-                   "これ以上拡大できません"))
+                     "Cannot shorten the query any further"
+                   "Cannot expand the query any further"))
       (setq reference-explorer-ui--consult-query-index new-index)
       (delete-minibuffer-contents)
       (insert (nth new-index reference-explorer-ui--consult-query-options)))))
@@ -3212,7 +3212,8 @@ Use ORIGIN-WINDOW as the source window for the selected result."
           (lambda (_entries)
             (reference-explorer-ui-consult-docset
              query mode source-window))
-          :help "H-s/e:検索語を縮小/拡大  H-i:Popper表示  M-m:Consult"))))))
+          :help
+          "H-s/e:shorten/expand query  H-i:show in Popper  M-m:Consult"))))))
 
 
 (with-eval-after-load 'savehist

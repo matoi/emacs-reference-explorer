@@ -257,7 +257,7 @@
         (progn
           (reference-explorer-ui--quick-render-list session)
           (with-current-buffer buffer
-            (should (equal (buffer-string) "一致なし"))
+            (should (equal (buffer-string) "No matches"))
             (should (reference-explorer-ui--face-includes-p
                      'shadow (get-text-property (point-min) 'face)))))
       (when (buffer-live-p buffer)
