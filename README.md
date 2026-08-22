@@ -303,6 +303,9 @@ Other customizable maps are
 segmenter functions. Each receives a
 `reference-explorer-phrase-segmenter-context` and returns candidates plus its
 preferred initial candidate in a `reference-explorer-phrase-segmenter-result`.
+Candidate bounds are normalized to integer buffer positions and must remain
+inside both the current buffer and the selected context while containing the
+origin position.
 The bundled MeCab segmenter handles Japanese compounds, and the Emacs
 segmenter is the fallback. MeCab initially selects the shortest
 candidate of at least two characters while retaining longer candidates for

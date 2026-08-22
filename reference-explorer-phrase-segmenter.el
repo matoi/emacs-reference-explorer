@@ -10,7 +10,6 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'seq)
 (require 'subr-x)
 
 (defgroup reference-explorer-phrase-segmenter nil
@@ -61,6 +60,25 @@ Each function receives a buffer POSITION and returns a
   "Return an unrestricted phrase segmenter context for POSITION."
   (reference-explorer-phrase-segmenter-context-create :position position))
 
+(defun reference-explorer-phrase-segmenter--position (value owner role)
+  "Normalize VALUE as a current-buffer position for OWNER's ROLE."
+  (let ((position
+         (cond
+          ((markerp value)
+           (unless (and (marker-position value)
+                        (eq (marker-buffer value) (current-buffer)))
+             (error "%s returned an invalid %s marker: %S"
+                    owner role value))
+           (marker-position value))
+          ((integerp value) value)
+          (t
+           (error "%s returned an invalid %s position: %S"
+                  owner role value)))))
+    (unless (<= (point-min) position (point-max))
+      (error "%s returned an out-of-buffer %s position: %S"
+             owner role value))
+    position))
+
 (defun reference-explorer-phrase-segmenter--context (&optional position)
   "Return the first context produced for POSITION or point."
   (let ((position (or position (point))))
@@ -72,34 +90,76 @@ Each function receives a buffer POSITION and returns a
                (unless (reference-explorer-phrase-segmenter-context-p context)
                  (error "Phrase context function %s returned invalid data: %S"
                         function context))
+               (setq context
+                     (copy-reference-explorer-phrase-segmenter-context context))
                (let ((resolved
-                      (reference-explorer-phrase-segmenter-context-position
-                       context))
+                      (reference-explorer-phrase-segmenter--position
+                       (reference-explorer-phrase-segmenter-context-position
+                        context)
+                       function "context"))
                      (start
                       (reference-explorer-phrase-segmenter-context-start context))
                      (end
                       (reference-explorer-phrase-segmenter-context-end context)))
-                 (unless (integer-or-marker-p resolved)
-                   (error "Phrase context function %s returned invalid position"
-                          function))
-                 (unless (or (and (null start) (null end))
-                             (and (integer-or-marker-p start)
-                                  (integer-or-marker-p end)
-                                  (<= start resolved)
-                                  (< resolved end)))
-                   (error "Phrase context function %s returned invalid bounds"
-                          function)))
+                 (if (or start end)
+                     (unless (and start end)
+                       (error "Phrase context function %s returned incomplete bounds"
+                              function))
+                   (setq start nil end nil))
+                 (when start
+                   (setq start
+                         (reference-explorer-phrase-segmenter--position
+                          start function "context start")
+                         end
+                         (reference-explorer-phrase-segmenter--position
+                          end function "context end"))
+                   (unless (and (< start end)
+                                (<= start resolved)
+                                (< resolved end))
+                     (error "Phrase context function %s returned invalid bounds"
+                            function)))
+                 (setf
+                  (reference-explorer-phrase-segmenter-context-position context)
+                  resolved
+                  (reference-explorer-phrase-segmenter-context-start context)
+                  start
+                  (reference-explorer-phrase-segmenter-context-end context)
+                  end))
                context))))
 
-(defun reference-explorer-phrase-segmenter--bounds-p (bounds)
-  "Return non-nil when BOUNDS is a nonempty buffer interval."
-  (and (consp bounds)
-       (integer-or-marker-p (car bounds))
-       (integer-or-marker-p (cdr bounds))
-       (< (car bounds) (cdr bounds))))
+(defun reference-explorer-phrase-segmenter--normalize-bounds
+    (segmenter bounds context)
+  "Normalize and validate SEGMENTER BOUNDS against CONTEXT."
+  (unless (consp bounds)
+    (error "Phrase segmenter %s returned invalid bounds: %S"
+           segmenter bounds))
+  (let* ((start
+          (reference-explorer-phrase-segmenter--position
+           (car bounds) segmenter "candidate start"))
+         (end
+          (reference-explorer-phrase-segmenter--position
+           (cdr bounds) segmenter "candidate end"))
+         (position
+          (reference-explorer-phrase-segmenter-context-position context))
+         (context-start
+          (reference-explorer-phrase-segmenter-context-start context))
+         (context-end
+          (reference-explorer-phrase-segmenter-context-end context)))
+    (unless (< start end)
+      (error "Phrase segmenter %s returned empty or reversed bounds: %S"
+             segmenter bounds))
+    (unless (and (<= start position) (<= position end))
+      (error "Phrase segmenter %s returned bounds outside the origin: %S"
+             segmenter bounds))
+    (when (and context-start
+               (not (and (<= context-start start) (<= end context-end))))
+      (error "Phrase segmenter %s returned bounds outside its context: %S"
+             segmenter bounds))
+    (cons start end)))
 
-(defun reference-explorer-phrase-segmenter--validate-result (segmenter result)
-  "Validate and return RESULT produced by SEGMENTER."
+(defun reference-explorer-phrase-segmenter--validate-result
+    (segmenter result context)
+  "Validate and normalize RESULT produced by SEGMENTER for CONTEXT."
   (unless (reference-explorer-phrase-segmenter-result-p result)
     (error "Phrase segmenter %s returned an invalid result: %S"
            segmenter result))
@@ -107,18 +167,29 @@ Each function receives a buffer POSITION and returns a
          (reference-explorer-phrase-segmenter-result-candidates result))
         (initial
          (reference-explorer-phrase-segmenter-result-initial result)))
-    (unless (and (consp candidates)
-                 (seq-every-p
-                  #'reference-explorer-phrase-segmenter--bounds-p candidates))
+    (unless (consp candidates)
       (error "Phrase segmenter %s returned invalid candidates: %S"
              segmenter candidates))
-    (unless initial
-      (setf (reference-explorer-phrase-segmenter-result-initial result)
-            (car candidates))
+    (setq candidates
+          (mapcar
+           (lambda (bounds)
+             (reference-explorer-phrase-segmenter--normalize-bounds
+              segmenter bounds context))
+           candidates))
+    (if initial
+        (let* ((normalized
+                (reference-explorer-phrase-segmenter--normalize-bounds
+                 segmenter initial context))
+               (selected (member normalized candidates)))
+          (unless selected
+            (error "Phrase segmenter %s selected a non-candidate: %S"
+                   segmenter initial))
+          (setq initial (car selected)))
       (setq initial (car candidates)))
-    (unless (member initial candidates)
-      (error "Phrase segmenter %s selected a non-candidate: %S"
-             segmenter initial)))
+    (setf (reference-explorer-phrase-segmenter-result-candidates result)
+          candidates
+          (reference-explorer-phrase-segmenter-result-initial result)
+          initial))
   result)
 
 (defun reference-explorer-phrase-segmenter-result-at-point (&optional position)
@@ -132,7 +203,8 @@ Each function receives a buffer POSITION and returns a
                return (reference-explorer-phrase-segmenter--validate-result
                        segmenter
                        (copy-reference-explorer-phrase-segmenter-result
-                        result))))))
+                        result)
+                       context)))))
 
 (defun reference-explorer-phrase-segmenter-visible-position-at-point
     (&optional position)

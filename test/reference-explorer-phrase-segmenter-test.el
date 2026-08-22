@@ -43,6 +43,68 @@
                :candidates '((1 . 5)) :initial '(2 . 5))))))
       (should-error (reference-explorer-phrase-segmenter-at-point)))))
 
+(ert-deftest reference-explorer-phrase-segmenter-rejects-out-of-buffer-bounds ()
+  (with-temp-buffer
+    (insert "word")
+    (goto-char 2)
+    (let ((reference-explorer-phrase-segmenters
+           (list
+            (lambda (_context)
+              (reference-explorer-phrase-segmenter-result-create
+               :candidates '((1 . 99)))))))
+      (should-error (reference-explorer-phrase-segmenter-at-point)))))
+
+(ert-deftest reference-explorer-phrase-segmenter-rejects-context-crossing-bounds ()
+  (with-temp-buffer
+    (insert "abcdefgh")
+    (goto-char 4)
+    (let ((reference-explorer-phrase-segmenter-context-functions
+           (list
+            (lambda (position)
+              (reference-explorer-phrase-segmenter-context-create
+               :position position :start 3 :end 7))))
+          (reference-explorer-phrase-segmenters
+           (list
+            (lambda (_context)
+              (reference-explorer-phrase-segmenter-result-create
+               :candidates '((2 . 5)))))))
+      (should-error (reference-explorer-phrase-segmenter-at-point)))))
+
+(ert-deftest reference-explorer-phrase-segmenter-rejects-bounds-away-from-origin ()
+  (with-temp-buffer
+    (insert "one two")
+    (goto-char 6)
+    (let ((reference-explorer-phrase-segmenters
+           (list
+            (lambda (_context)
+              (reference-explorer-phrase-segmenter-result-create
+               :candidates '((1 . 4)))))))
+      (should-error (reference-explorer-phrase-segmenter-at-point)))))
+
+(ert-deftest reference-explorer-phrase-segmenter-normalizes-marker-bounds ()
+  (with-temp-buffer
+    (insert "word")
+    (goto-char 2)
+    (let* ((start (copy-marker 1))
+           (end (copy-marker 5))
+           (reference-explorer-phrase-segmenters
+            (list
+             (lambda (_context)
+               (reference-explorer-phrase-segmenter-result-create
+                :candidates (list (cons start end))
+                :initial '(1 . 5)))))
+           (result (reference-explorer-phrase-segmenter-result-at-point)))
+      (should (equal
+               (reference-explorer-phrase-segmenter-result-candidates result)
+               '((1 . 5))))
+      (should (equal
+               (reference-explorer-phrase-segmenter-result-initial result)
+               '(1 . 5)))
+      (should (integerp
+               (caar
+                (reference-explorer-phrase-segmenter-result-candidates
+                 result)))))))
+
 (ert-deftest reference-explorer-phrase-segmenter-recognizes-emacs-word ()
   (with-temp-buffer
     (insert "alpha beta")
