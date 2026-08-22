@@ -91,7 +91,7 @@
   (should (eq (lookup-key reference-explorer-ui-consult-map (kbd "H-V"))
               #'reference-explorer-ui-preview-scroll-down))
   (should (eq (lookup-key reference-explorer-ui-consult-map (kbd "H-i"))
-              #'reference-explorer-ui-consult-activate-preview))
+              #'reference-explorer-ui-select-candidate))
   (should-not (lookup-key reference-explorer-ui-consult-map (kbd "H-M-.")))
   (should (eq (lookup-key reference-explorer-ui-consult-map (kbd "TAB"))
               #'reference-explorer-ui-select-candidate)))
@@ -149,7 +149,7 @@
                           (kbd "<touch-end>"))
               #'reference-explorer-ui-quick-handle-preview-input))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-i"))
-              #'reference-explorer-ui-quick-activate-preview))
+              #'reference-explorer-ui-quick-preview-display-entry))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "TAB"))
               #'reference-explorer-ui-quick-preview-display-entry))
   (should (eq (lookup-key reference-explorer-ui-quick-map (kbd "H-."))
@@ -648,6 +648,99 @@
       (reference-explorer-ui--quick-forward-input))
     (should (eq this-command
                 'reference-explorer-ui-quick-handle-wheel))))
+
+(ert-deftest reference-explorer-ui-quick-wheel-detects-vertical-direction ()
+  (should (eq
+           (reference-explorer-ui--quick-wheel-vertical-direction
+            '(wheel-up position 1 2 (0.0 . -12.5))
+            'pixel-scroll-precision)
+           'beginning))
+  (should (eq
+           (reference-explorer-ui--quick-wheel-vertical-direction
+            '(wheel-down position 1 2 (0.0 . 12.5))
+            'pixel-scroll-precision)
+           'end))
+  (should-not
+   (reference-explorer-ui--quick-wheel-vertical-direction
+    '(wheel-left position 1 2 (-12.5 . 0.0))
+    'pixel-scroll-precision))
+  ;; `mwheel-scroll' follows the event type, not a precision delta that may
+  ;; also be present in the platform event.
+  (should (eq
+           (reference-explorer-ui--quick-wheel-vertical-direction
+            '(wheel-down position 1 2 (0.0 . -12.5)) 'mwheel-scroll)
+           'end))
+  (should (eq
+           (reference-explorer-ui--quick-wheel-vertical-direction
+            '(wheel-up position) 'mwheel-scroll)
+           'beginning))
+  (should (eq
+           (reference-explorer-ui--quick-wheel-vertical-direction
+            '(wheel-down position) 'mwheel-scroll)
+           'end)))
+
+(ert-deftest reference-explorer-ui-quick-wheel-handlers-are-scroll-commands ()
+  (should (get 'reference-explorer-ui-quick-handle-wheel 'scroll-command))
+  (should (get 'reference-explorer-ui-quick-handle-preview-input
+               'scroll-command)))
+
+(ert-deftest reference-explorer-ui-quick-normalizes-false-shr-top-endpoint ()
+  (save-window-excursion
+    (delete-other-windows)
+    (with-temp-buffer
+      (dotimes (index 200)
+        (insert (format "line %d\n" index)))
+      (switch-to-buffer (current-buffer))
+      (goto-char (point-min))
+      (forward-line 1)
+      (set-window-start nil (point) t)
+      (let ((position
+             (cons (window-start) (window-vscroll nil t))))
+        (cl-letf (((symbol-function
+                    'reference-explorer-ui--active-webkit-preview-xwidget)
+                   (lambda () nil)))
+          (reference-explorer-ui--quick-normalize-shr-scroll-endpoint
+           (selected-window) 'beginning position)))
+      (should (= (window-start) (point-min)))
+      (should (zerop (window-vscroll nil t))))))
+
+(ert-deftest reference-explorer-ui-quick-normalizes-false-shr-bottom-endpoint ()
+  (save-window-excursion
+    (delete-other-windows)
+    (with-temp-buffer
+      (dotimes (index 200)
+        (insert (format "line %d\n" index)))
+      (switch-to-buffer (current-buffer))
+      (goto-char (point-min))
+      (set-window-start nil (point-min) t)
+      (let ((position
+             (cons (window-start) (window-vscroll nil t))))
+        (cl-letf (((symbol-function
+                    'reference-explorer-ui--active-webkit-preview-xwidget)
+                   (lambda () nil)))
+          (reference-explorer-ui--quick-normalize-shr-scroll-endpoint
+           (selected-window) 'end position)))
+      (should (= (window-end nil t) (point-max))))))
+
+(ert-deftest reference-explorer-ui-quick-does-not-normalize-webkit-endpoint ()
+  (save-window-excursion
+    (delete-other-windows)
+    (with-temp-buffer
+      (dotimes (index 20)
+        (insert (format "line %d\n" index)))
+      (switch-to-buffer (current-buffer))
+      (goto-char (point-min))
+      (forward-line 1)
+      (set-window-start nil (point) t)
+      (let ((start (window-start))
+            (position
+             (cons (window-start) (window-vscroll nil t))))
+        (cl-letf (((symbol-function
+                    'reference-explorer-ui--active-webkit-preview-xwidget)
+                   (lambda () 'webkit-view)))
+          (reference-explorer-ui--quick-normalize-shr-scroll-endpoint
+           (selected-window) 'beginning position))
+        (should (= (window-start) start))))))
 
 (ert-deftest reference-explorer-ui-quick-c-g-returns-then-quits ()
   (let* ((session

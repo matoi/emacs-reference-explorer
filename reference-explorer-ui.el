@@ -857,7 +857,7 @@ Highlight literal QUERY occurrences when QUERY is non-nil."
                   :index 0
                   :source-window (reference-explorer-context-window context)
                   :source-marker (reference-explorer-context-marker context)
-                  :help "TAB:commit  H-i:preview操作  H-q:quit"))
+                  :help "TAB/H-i:Popper表示  H-q:quit"))
               (when-let ((result
                           (reference-explorer-ui--read-source-candidate
                            source results context)))
@@ -1851,7 +1851,7 @@ Prefix the summary with STATUS when it is non-nil."
            (or (and reference-explorer-ui--quick-session
                     (reference-explorer-ui--quick-session-help
                      reference-explorer-ui--quick-session))
-               "H-s/e:検索語を縮小/拡大  H-i:preview操作  M-m:Consult")))
+               "H-s/e:検索語を縮小/拡大  H-i:Popper表示  M-m:Consult")))
 
 (defun reference-explorer-ui--quick-visible-entries (session)
   "Return visible entries for quick reference SESSION and update its offset."
@@ -2481,16 +2481,69 @@ Selection styling is applied by the renderer across the complete visual row."
       (let ((quick-command this-command))
         (unwind-protect
             (command-execute command)
-          (setq this-command quick-command))))))
+          (setq this-command quick-command)))
+      command)))
 
-(defun reference-explorer-ui-quick-handle-wheel (_event)
+(defun reference-explorer-ui--quick-wheel-vertical-direction (event command)
+  "Return the vertical scroll direction represented by EVENT.
+COMMAND is the renderer command handling EVENT.  The result is
+`beginning', `end', or nil for non-vertical input."
+  (let ((delta (and (consp event) (nth 4 event))))
+    (cond
+     ((and (eq command 'pixel-scroll-precision)
+           (consp delta)
+           (< (round (cdr delta)) 0))
+      'beginning)
+     ((and (eq command 'pixel-scroll-precision)
+           (consp delta)
+           (> (round (cdr delta)) 0))
+      'end)
+     ((and (eq command 'pixel-scroll-precision) (consp delta)) nil)
+     ((memq (event-basic-type event) '(wheel-up mouse-4)) 'beginning)
+     ((memq (event-basic-type event) '(wheel-down mouse-5)) 'end))))
+
+(defun reference-explorer-ui--quick-normalize-shr-scroll-endpoint
+    (window direction previous-position)
+  "Normalize WINDOW when a SHR scroll toward DIRECTION did not move.
+PREVIOUS-POSITION is the window start and pixel vscroll before the input."
+  (when (and direction
+             (window-live-p window)
+             (not (reference-explorer-ui--active-webkit-preview-xwidget))
+             (equal previous-position
+                    (cons (window-start window)
+                          (window-vscroll window t))))
+    (with-selected-window window
+      (pcase direction
+        ('beginning
+         (unless (and (= (window-start) (point-min))
+                      (zerop (window-vscroll nil t)))
+           (goto-char (point-min))
+           (set-window-start nil (point-min) t)
+           (set-window-vscroll nil 0 t t)))
+        ('end
+         (unless (= (window-end nil t) (point-max))
+           (goto-char (point-max))
+           (let ((scroll-margin 0))
+             (recenter -1))))))))
+
+(defun reference-explorer-ui-quick-handle-wheel (event)
   "Promote the Quick preview if needed, then forward its wheel event."
   (interactive "e")
   (when-let ((session reference-explorer-ui--quick-session))
     (when (eq (reference-explorer-ui--quick-session-state session) 'candidate)
       (reference-explorer-ui-quick-activate-preview))
     (when (eq (reference-explorer-ui--quick-session-state session) 'preview)
-      (reference-explorer-ui--quick-forward-input))))
+      (let* ((window (selected-window))
+             (position
+              (cons (window-start window) (window-vscroll window t))))
+        (let* ((command (reference-explorer-ui--quick-forward-input))
+               (direction
+                (reference-explorer-ui--quick-wheel-vertical-direction
+                 event command)))
+          (reference-explorer-ui--quick-normalize-shr-scroll-endpoint
+           window direction position))))))
+
+(put 'reference-explorer-ui-quick-handle-wheel 'scroll-command t)
 
 (defun reference-explorer-ui-quick-handle-preview-input (_event)
   "Forward the current input only while operating the Quick preview."
@@ -2500,6 +2553,8 @@ Selection styling is applied by the renderer across the complete visual row."
                   reference-explorer-ui--quick-session)
                  'preview))
     (reference-explorer-ui--quick-forward-input)))
+
+(put 'reference-explorer-ui-quick-handle-preview-input 'scroll-command t)
 
 (defun reference-explorer-ui--quick-context ()
   "Return a reference context for the active quick reference query."
@@ -2565,7 +2620,7 @@ Selection styling is applied by the renderer across the complete visual row."
   "<mouse-6>" #'reference-explorer-ui-quick-handle-wheel
   "<mouse-7>" #'reference-explorer-ui-quick-handle-wheel
   "<touch-end>" #'reference-explorer-ui-quick-handle-preview-input
-  "H-i" #'reference-explorer-ui-quick-activate-preview
+  "H-i" #'reference-explorer-ui-quick-preview-display-entry
   "H-q" #'reference-explorer-ui-quick-ignore-input
   "C-g" #'reference-explorer-ui-quick-cancel-or-return
   "TAB" #'reference-explorer-ui-quick-preview-display-entry
@@ -2872,7 +2927,7 @@ service."
   "H-e" #'reference-explorer-ui-consult-expand-query
   "H-v" #'reference-explorer-ui-preview-scroll-up
   "H-V" #'reference-explorer-ui-preview-scroll-down
-  "H-i" #'reference-explorer-ui-consult-activate-preview
+  "H-i" #'reference-explorer-ui-select-candidate
   "H-." #'reference-explorer-ui-consult-open-reference
   "TAB" #'reference-explorer-ui-select-candidate
   "<tab>" #'reference-explorer-ui-select-candidate)
@@ -3121,7 +3176,7 @@ ORIGIN-WINDOW receives focus after direct preview interaction ends."
           (lambda (_entries)
             (reference-explorer-ui-consult-docset
              query mode source-window))
-          :help "H-s/e:検索語を縮小/拡大  H-i:preview操作  M-m:Consult"))))))
+          :help "H-s/e:検索語を縮小/拡大  H-i:Popper表示  M-m:Consult"))))))
 
 
 (with-eval-after-load 'savehist
